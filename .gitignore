@@ -1,0 +1,10 @@
+.venv/
+.directory
+corsario/
+data/
+experiments/
+notebook/
+reports/
+scripts/
+tests/
+NOTES.md

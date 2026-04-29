@@ -1,0 +1,42 @@
+# ARCHES (Exploration for Shower Reconstruction)
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arches"
+version = "0.1.0"
+description = "Pipeline for cosmic ray shower reconstruction using ML and physics-based methods"
+authors = [
+    { name = "Isaac Cantú" }
+]
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = [
+    "numpy",
+    "pandas",
+    "scikit-learn",
+    "matplotlib",
+    "seaborn",
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "pyyaml",
+    "ipykernel"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black"
+]
+
+[project.urls]
+Repository = "https://github.com/tu_usuario/ARCHES"
+
+#[project.scripts]
+#arches-run = "src.pipeline.run_pipeline:main"
+#arches-train = "src.training.train:run_training"
+#arches-data = "src.data.conversion:main"
