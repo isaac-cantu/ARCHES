@@ -1,6 +1,7 @@
 .venv/
 .directory
-corsario/
+corsario/.venv_corsario
+corsario/bindings
 data/
 experiments/
 notebook/
@@ -8,3 +9,4 @@ reports/
 scripts/
 tests/
 NOTES.md
+DAT005000.csv
