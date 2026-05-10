@@ -1,12 +1,12 @@
-from training.metrics import Metrics
+from metrics.metrics import Metrics
 
-def evaluate(y_pred, y_true):
+def evaluate_model(y_pred, y_true):
 
     metrics_ = Metrics(y_pred, y_true)
 
     metrics_data = {
         "mse": metrics_.mse(),
-        "mae": metrics_.mas(),
+        "mae": metrics_.mae(),
         "rmse": metrics_.rmse(),
         "r2": metrics_.r2(),
         "relative error": metrics_.relative_error(),
@@ -15,10 +15,30 @@ def evaluate(y_pred, y_true):
         "p68": metrics_.percentile_68(),
         "p95": metrics_.percentile_95(),
         "correlation": metrics_.correlation(),
-        "energy scale": metrics_.energy_scale()
+        "energy_scale": metrics_.energy_scale()
     }
 
     return metrics_data
+
+
+def evaluate_training(y_pred, y_true):
+
+    metrics_ = Metrics(y_pred, y_true)
+
+    metrics_data = {
+        "mse": metrics_.mse(),
+        "mae": metrics_.mae(),
+        "rmse": metrics_.rmse(),
+        "r2": metrics_.r2(),
+        "relative_error": metrics_.relative_error(),
+        "bias": metrics_.bias(), 
+        "resolution": metrics_.resolution(),
+        "correlation": metrics_.correlation(),
+        "energy_scale": metrics_.energy_scale()
+    }
+
+    return metrics_data
+
 
 def training_metrics(train_loss:list=None, val_loss:list=None,
                      train_metric:list=None, val_metric:list=None):

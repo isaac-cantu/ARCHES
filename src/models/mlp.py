@@ -10,6 +10,8 @@ def get_activation(name: str):
         return nn.LeakyReLU()
     elif name == "elu":
         return nn.ELU()
+    elif name == "gelu":
+        return nn.GELU()
     elif name == "sigmoid":
         return nn.Sigmoid()
     elif name == "tanh":

@@ -94,37 +94,21 @@ class Particle{
         Particle(int, float, float, float, float, float, float);
 
         float get_energy();
-
         std::string get_particle_type();
-
         int get_particle_no();
-
         int get_no_obs();
-
         int get_hadron_gen();
-
         float get_mass();
-
         std::array<float,3> get_momentum();
-
         float get_px();
-
         float get_py();
-
         float get_pz();
-
         int get_id();
-
         float get_x();
-
         float get_y();
-
         float get_time();
-
         std::string particle_data_csv();
-
         std::string particle_data_csv_ext();
-
 };
 
 Particle::Particle(int _particle_id, float _px, float _py, float _pz, float _x, float _y, float _time) : 

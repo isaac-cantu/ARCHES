@@ -1,0 +1,55 @@
+experiments/
+│
+├── exp_001/
+│   ├── config.yaml
+│   ├── summary.json
+│   │
+│   ├── models/
+│   │   ├── model_001/
+│   │   ├── model_002/
+│   │   ├── model_003/
+│   │   └── ...
+│   │
+│   ├── plots/
+│   │
+│   └── comparisons/
+│
+├── exp_002/
+│
+└── master_results.csv
+
+
+model_001/
+├── config.yaml
+├── best_model.pth
+├── history.json
+├── metrics.json
+├── predictions.npy
+├── summary.csv
+└── plots/
+
+
+rankings/
+├── best_mse.csv
+├── best_resolution.csv
+└── best_p68.csv
+
+
+csv 
+
+layers, width, activation, optimizer, loss, dropout, lr, train_loss, val_loss, test_loss, mse, mae, rmse, r2, relative_error, 
+bias, resolution, p68, p95, correlation, energy_scale
+
+
+
+        "mse": metrics_.mse(),
+        "mae": metrics_.mae(),
+        "rmse": metrics_.rmse(),
+        "r2": metrics_.r2(),
+        "relative error": metrics_.relative_error(),
+        "bias": metrics_.bias(), 
+        "resolution": metrics_.resolution(),
+        "p68": metrics_.percentile_68(),
+        "p95": metrics_.percentile_95(),
+        "correlation": metrics_.correlation(),
+        "energy_scale": metrics_.energy_scale()
