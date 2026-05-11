@@ -53,3 +53,18 @@ bias, resolution, p68, p95, correlation, energy_scale
         "p95": metrics_.percentile_95(),
         "correlation": metrics_.correlation(),
         "energy_scale": metrics_.energy_scale()
+
+
+        config pipeline/config_example.yaml 
+/home/icantu24/Documents/ARCHES/data/processed/example
+Model 1: L2, W32, relu, 42, 32, circle
+Epoch 10/50 | Train Loss: 1.9972 | Val Loss: 0.5101
+Epoch 20/50 | Train Loss: 1.4012 | Val Loss: 0.2572
+Early stopping triggered
+Model 2: L2, W64, relu, 42, 32, circle
+^XEpoch 10/50 | Train Loss: 1.1781 | Val Loss: 0.2603
+Epoch 20/50 | Train Loss: 0.7982 | Val Loss: 0.2946
+Epoch 30/50 | Train Loss: 0.6451 | Val Loss: 0.2104
+Epoch 40/50 | Train Loss: 0.5217 | Val Loss: 0.1613
+Epoch 50/50 | Train Loss: 0.3967 | Val Loss: 0.1554
+Experiment completed!

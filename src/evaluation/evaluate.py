@@ -9,7 +9,7 @@ def evaluate_model(y_pred, y_true):
         "mae": metrics_.mae(),
         "rmse": metrics_.rmse(),
         "r2": metrics_.r2(),
-        "relative error": metrics_.relative_error(),
+        "relative_error": metrics_.relative_error(),
         "bias": metrics_.bias(), 
         "resolution": metrics_.resolution(),
         "p68": metrics_.percentile_68(),

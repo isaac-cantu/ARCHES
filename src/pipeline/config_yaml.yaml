@@ -1,0 +1,83 @@
+experiment:
+  id: 1
+  name: "prueba"
+  description: "Reconstrucción de energía y ángulo"
+
+paths:
+  experiments: "/home/icantu24/Documents/ARCHES/experiments"
+  data: "/home/icantu24/Documents/ARCHES/data/processed/example"
+
+data:
+  input_type: "circle"
+  output:
+    - energy
+
+  split:
+    train: 0.70
+    validation: 0.15
+    test: 0.15
+
+model:
+  type: mlp
+
+  architecture:
+    layers: 2
+    neurons: 64
+
+  activation: relu
+
+  regularization:
+    dropout: 0.0
+    batchnorm: false
+
+training:
+  epochs: 50
+  batch_size: 32
+  seed: 42
+
+  optimizer:
+    type: 
+    lr: 1e-3
+    weight_decay: 0.0
+
+  scheduler:
+    enabled: false
+    type: reduce_on_plateau
+
+  early_stopping:
+    enabled: true
+    patience: 10
+
+loss:
+  type: mse
+
+metrics:
+  enabled:
+    - mse
+    - mae
+    - rmse
+    - r2
+    - energy_res
+
+search:
+  enabled: true
+
+  method: grid
+
+  parameters:
+
+    layers:
+      - 2
+      - 3
+
+    neurons:
+      - 32
+      - 64
+
+    activation:
+      - relu
+      - gelu
+
+    seed:
+      - 42
+      - 123

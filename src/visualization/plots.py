@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
@@ -8,12 +10,22 @@ import numpy as np
 
 class TrainPlots:
 
-    def __init__(self, preds, targets, path):
+    def __init__(self, preds, targets, path, model_name, experiment_path):
 
         self.path = Path(path)
 
         self.preds = np.array(preds)
         self.targets = np.array(targets)
+
+        self.model_name = model_name
+        self.experiment_path = Path(experiment_path)
+
+        self.plots_experiment = self.experiment_path / "plots"
+
+        self.plots_experiment.mkdir(
+            parents=True,
+            exist_ok=True
+        )
 
         self.plots_path = self.path / "plots"
 
@@ -21,6 +33,7 @@ class TrainPlots:
             parents=True,
             exist_ok=True
         )
+
 
         history_path = self.path / "history.json"
 
@@ -122,13 +135,15 @@ class TrainPlots:
 
         plt.close()
 
-    def general_plot(self):
+    def general_plot(self, plot_name):
 
         fig, axes = plt.subplots(
             4,
             2,
             figsize=(14, 18)
         )
+
+        fig.suptitle(self.model_name)
 
         axes = axes.flatten()
 
@@ -324,9 +339,15 @@ class TrainPlots:
             dpi=300
         )
 
+        plt.savefig(
+            self.experiment_path / "plots" / f"{plot_name}.png",
+            dpi=300
+        )
+
+
         plt.close()
 
-    def plot_all(self):
+    def plot_all(self, plot_name):
 
         self.plot_loss()
 
@@ -334,26 +355,5 @@ class TrainPlots:
 
         self.plot_residuals()
 
-        self.general_plot()
+        self.general_plot(plot_name)
 
-# En grids de Hidden layers x Width
-class Exp_plots():
-
-    def __init__(self, metadata, path:str=None):
-        pass
-
-    # exp_nnn/general/heatmap.png
-    def heat_map_plot():
-        plt.savefig()
-
-    # exp_nnn/general/train/train_data.png
-    def loss_map_plot():
-        plt.savefig()
-
-    # exp_nnn/general/metric/metric
-    def metric_map_plot():
-        plt.savefig()
-
-    # exp_nnn/general/prediction/prediction.png
-    def prediction_map_plot():
-        plt.savefig()

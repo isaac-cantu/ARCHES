@@ -1,7 +1,10 @@
 from losses.losses import LossSelector
+from optimizers.scheduler_selector import SchedulerSelector
 from evaluation.evaluate import evaluate_training, evaluate_model
 import torch
 import json 
+import pandas as pd 
+from pathlib import Path
 
 def to_serializable(obj):
 
@@ -78,7 +81,7 @@ class Trainer:
 
             self.history[set_type][key].append(value.item())    
 
-    def train(self, epochs, early_stopping=True, patience=10):
+    def train(self, epochs, early_stopping=True, patience=10, scheduler=None):
 
         for epoch in range(epochs):
 
@@ -247,4 +250,135 @@ class Trainer:
 
             json.dump(self.test_metrics, f, indent=4, default=to_serializable)
 
+    def save_model_csv(self, config):
 
+        self.config = config
+        self.training_info = self.config["training"]
+        self.model_info = self.config["model"]
+        self.data_info = self.config["data"]
+        
+        summary_data = {
+
+            # -------- IDENTIDAD --------
+            "experiment_id":
+                self.config["experiment"]["id"],
+
+            "model_id":
+                self.model_info["id"],
+
+            # -------- MODELO --------
+            "model_type":
+                self.model_info["type"],
+
+            "layers":
+                self.model_info["hidden_layers"],
+
+            "width":
+                self.model_info["neurons"],
+
+            "activation":
+                self.model_info["activation"],
+
+            "dropout":
+                self.training_info["dropout"],
+
+            "batchnorm":
+                self.training_info["batchnorm"],
+
+            # -------- TRAINING --------
+            "optimizer":
+                self.training_info["optimizer"],
+
+            "lr":
+                self.training_info["lr"],
+
+            "loss":
+                self.training_info["loss"],
+
+            "batch_size":
+                self.training_info["batch_size"],
+
+            "epochs":
+                self.training_info["epochs"],
+
+            "early_stopping":
+                self.training_info["early_stopping"],
+
+            "patience":
+                self.training_info["patience"],
+
+            "seed":
+                self.training_info["seed"],
+
+            # -------- BEST EPOCH --------
+            "best_epoch":
+                self.history["best_epoch"]["epoch"],
+
+            # -------- LOSSES --------
+            "train_loss":
+                self.history["best_epoch"]["train_loss"],
+
+            "val_loss":
+                self.history["best_epoch"]["val_loss"],
+
+            # -------- TEST METRICS --------
+            "mse":
+                self.test_metrics["mse"].item(),
+
+            "mae":
+                self.test_metrics["mae"].item(),
+
+            "rmse":
+                self.test_metrics["rmse"].item(),
+
+            "r2":
+                self.test_metrics["r2"].item(),
+
+            "relative_error":
+                self.test_metrics["relative_error"].item(),
+
+            "bias":
+                self.test_metrics["bias"].item(),
+
+            "resolution":
+                self.test_metrics["resolution"].item(),
+
+            "p68":
+                self.test_metrics["p68"].item(),
+
+            "p95":
+                self.test_metrics["p95"].item(),
+
+            "correlation":
+                self.test_metrics["correlation"].item(),
+
+            "energy_scale":
+                self.test_metrics["energy_scale"].item(),
+
+            # -------- DATA --------
+            "data_type":
+                self.data_info["type"]
+        }
+        
+        summary_path = (Path(self.config["experiment"]["path"]) / "summary.csv")
+
+        row = pd.DataFrame([summary_data])
+
+        # si no existe
+        if not summary_path.exists():
+
+            row.to_csv(
+                summary_path,
+                index=False
+            )
+
+        # si ya existe
+        else:
+
+            row.to_csv(
+                summary_path,
+                mode="a",
+                header=False,
+                index=False
+            )
+        

@@ -2,7 +2,6 @@
 import yaml
 import torch
 import torch.optim as optim
-import argparse
 from pprint import pprint
 import datetime
 import sys
@@ -21,11 +20,13 @@ from data.preprocessing import data_processed
 from data.split_data import split_data
 
 # Evaluation
-from evaluation.plots import TrainPlots
+from visualization.plots import TrainPlots
 from evaluation.evaluate import evaluate_model
+
 
 # Model
 import models.mlp as mlp
+from experiments.experiment_runner import ExperimentRunner
 
 # Loss
 from losses.losses import LossSelector
@@ -34,37 +35,22 @@ from losses.losses import LossSelector
 import metrics.metrics
 import trainers.train
 from trainers.trainer import Trainer
+from visualization.data_plots import DataPlots
+from visualization.exp_plots import ExpPlots
 
 # Pipeline
 from pipeline.set_seed import set_seed
-
+from pipeline.utils import read_parser, read_yaml, model_information
+#==========================================
 # Lectura de argumento parse --arg
 
-parser = argparse.ArgumentParser()      # Crear parser
+yaml_path, verbose, gpu_activation = read_parser()
 
-# Argumetos/opciones
-parser.add_argument('-c', '--configs', type=str, 
-                    nargs=1, help="File of the experiment")
-
-parser.add_argument('-v', '--verbose', type=bool, 
-                    nargs=1, help="Show model data")
-
-parser.add_argument('-g', '--gpu', type=bool, 
-                    nargs=1, help="Show model data")
-
-
-
-args = parser.parse_args()              # Argumento escrito
-
-yaml_path = args.configs[0]             # Obtener argumento
-
-#verbose = args.verbose[0]
-
-exit
+#==========================================
 # Abrir archivo .yaml
-with open(yaml_path, "r") as file:
-    config: dict = yaml.safe_load(file)
-    #pprint(config, sort_dicts=False)
+config = read_yaml(yaml_path=yaml_path)
+
+#pprint(config)
 
 experiment_config      = config["experiment"]
 data_config            = config["data"]
@@ -74,24 +60,33 @@ search_space_config    = config["search_space"]
 loss_config            = config["loss"]
 metrics_config         = config["metrics"]
 
-n = 10
+#==========================================
+
 if __name__ == "__main__":
 
 # Data
+    #==========================================
+
     print(data_config["path"])
+
     # 1. Cargar datos
+    #==========================================
     df_particles = particles_csv(data_config["path"])
     df_shower = shower_csv(data_config["path"])
 
     input_data, output_data = data_processed(input_type=data_config["input_type"], df_particles=df_particles, df_shower=df_shower)
     #input_data, output_data = convert(data)
 
+    #==========================================
+
     input_dim = len(input_data[0])
 
-    model_n = 0
+    #==========================================
     path = experiment_config["path"]
     exp_file = path + f"/exp_{experiment_config["id"]}" 
 
+    DataPlots(df_particles, df_shower, exp_file).plot_all()
+    
     Path(exp_file).mkdir(exist_ok=True)
 
     with open(exp_file + "/config.yaml", "w") as f:
@@ -100,13 +95,11 @@ if __name__ == "__main__":
             f,
             default_flow_style=False
         )
-
-    # Carpeta de experimento 
-    # Archivo yaml duplicado
     # Archivo .md de resumen
+    #==========================================
 
     for seed in search_space_config["seed"]:
-
+        model_id = 0
         set_seed(seed)
 
         # Train - Test - Val - Split
@@ -123,74 +116,43 @@ if __name__ == "__main__":
             val_loader   = DataLoader(val_dataset, batch_size=batch)
             test_loader  = DataLoader(test_dataset, batch_size=batch)
             
+            training_data = {
+                "train": train_loader,
+                "val": val_loader,
+                "test": test_loader,
+            }
             
-            for i in search_space_config["layers"]:
-                for j in search_space_config["neurons"]:
-                    for k in search_space_config["activation"]:
+            for layers in search_space_config["layers"]:
+                for neurons in search_space_config["neurons"]:
+                    for activation in search_space_config["activation"]:
                         
-                        model_n += 1
-                        model_path = exp_file + f"/model_{model_n}"
-                        Path(model_path).mkdir(exist_ok=True)
-
-                        model_data = {
-
-                            "model": {
-                                "type": model_config["type"],
-                                "hidden_layers": i,
-                                "activation": k
-                            },
-
-                            "training": {
-                                "batch_size": batch,
-                                "epochs": training_config["epochs"],
-                                "dropout": 0,
-                                "loss": 0,
-                                "batchnorm": 0,
-                                "optimizer": training_config["optimizer"]["type"],
-                                "lr": training_config["optimizer"]["lr"],
-                                "seed":0
-                            }
+                        model_id += 1
+                        model_params = {
+                            "id": model_id,
+                            "seed": seed,
+                            "batch": batch,
+                            "layers": layers,
+                            "neurons": neurons,
+                            "activation": activation,
+                            "input_dim": input_dim,
+                            "output": data_config["output"]
                         }
 
-                        with open(model_path+"/config.yaml", "w") as f:
-                            yaml.dump(
-                                model_config,
-                                f,
-                                default_flow_style=False
-                            )
-
-                        # Crear carpeta de modelo (LN_WN_k_batch_datatype)
-                        # Guardar (history.json, history.csv, plots/, predictions.json, metrics.json, model.pth, metadata.json)
-                        #
-
-                        # Hacer modelo
+                        model_data = model_information(config, model_params, exp_file)
                        
-                        print(f"Model {model_n}: L{i}, W{j}, {k}, {seed}, {batch}, {data_config["input_type"]}")
+                       #========================================== (pantalla agregar en train)
+                        model_name = f"Model {model_id}: L{layers}, W{neurons}, {activation}, S{seed}, B{batch}, {data_config["input_type"]}"
+                        print(model_name)
+
                         # Model
-                        model = mlp.ShowerMLP(input_dim=input_dim, output_dim=len(data_config["output"]), 
-                                    n_layers=i, n_neurons=j, activation=k, dropout=True) #model_config["dropout"]
-
-
-                        criterion = LossSelector(loss_type=loss_config["type"])
-
-                        optimizer = optim.Adam(
-                            model.parameters(),
-                            lr=1e-3
-                        )
-
-                        train_model = Trainer(model, loss_config["type"], optimizer, "cpu", model_path)
-                        train_model.set_dataloaders(train_loader, val_loader)
-                        train_model.train(epochs=training_config["epochs"],
-                                          early_stopping=training_config["early_stopping"]["enabled"],
-                                          patience=training_config["early_stopping"]["patience"])
-                        train_model.save_history()
-                        train_model.save_model()
-                        y_pred, y_true = train_model.evaluate_test(test_loader=test_loader)
-                        train_model.save_metrics()
-
-                        model_plot = TrainPlots(y_pred, y_true, model_path)
-                        model_plot.plot_all()
+                        #==========================================
                         
+                        ExperimentRunner(model_data, training_data).run()
+                        #==========================================
+
+                        ExpPlots(exp_file).plot_all()
+                        
+
                         # Evaluation
                         # evaluate()
                         # obtener resultados con métricas 
@@ -205,6 +167,8 @@ if __name__ == "__main__":
                         # agregar datos a general y exp
 
                         # Agregar a ML flow
+
+print("Experiment completed!")
 #     model_001/
 # ├── config.yaml
 # ├── best_model.pth
@@ -229,14 +193,14 @@ if __name__ == "__main__":
     # 
    
 
-Me falta gráfica completa
-summary.csv
-models.json
-plots/
-losses (PAFL)
-arreglar trainer
+# Me falta gráfica completa
+# summary.csv (general)
+# models.json
+# plots/
+# losses (PAFL) agregar
+# arreglar trainer
 
-Probar
+# Probar
 
 
 # (.venv) icantu24@192:~/Documents/ARCHES/src$ python3 pipeline/run_pipeline.py --config pipeline/config_example.yaml 

@@ -19,25 +19,36 @@ def get_activation(name: str):
     else:
         raise ValueError(f"Activation {name} not supported")
     
-def build_mlp_layers(input_dim, output_dim, n_layers, n_neurons, activation, dropout=False):
+def build_mlp_layers(input_dim, output_dim, n_layers, n_neurons, activation, dropout=0, batchnorm=False):
     
     layers = []
-    act = get_activation(activation)
 
     # Primera capa
     layers.append(nn.Linear(input_dim, n_neurons))
-    layers.append(act)
 
-    if dropout:
+    if batchnorm:
+        layers.append(
+            nn.BatchNorm1d(n_neurons)
+        )
+
+    layers.append(get_activation(activation))
+
+    if dropout > 0:
         layers.append(nn.Dropout(0.5))
 
     # Capas ocultas
     for _ in range(n_layers):
         layers.append(nn.Linear(n_neurons, n_neurons))
-        layers.append(act)
 
-        if dropout:
-            layers.append(nn.Dropout(0.5))
+        if batchnorm:
+            layers.append(
+                nn.BatchNorm1d(n_neurons)
+            )
+
+        layers.append(get_activation(activation))
+
+        if dropout > 0:
+            layers.append(nn.Dropout(dropout))
 
     # Capa de salida
     layers.append(nn.Linear(n_neurons, output_dim))
@@ -46,7 +57,7 @@ def build_mlp_layers(input_dim, output_dim, n_layers, n_neurons, activation, dro
 
 class ShowerMLP(nn.Module):
 
-    def __init__(self, input_dim, output_dim, n_layers, n_neurons, activation, dropout=False):
+    def __init__(self, input_dim, output_dim, n_layers, n_neurons, activation, dropout=0, batchnorm=False):
         super().__init__()
 
         layers = build_mlp_layers(
@@ -55,7 +66,8 @@ class ShowerMLP(nn.Module):
             n_layers=n_layers,
             n_neurons=n_neurons,
             activation=activation,
-            dropout=dropout
+            dropout=dropout,
+            batchnorm=batchnorm
         )
 
         self.net = nn.Sequential(*layers)

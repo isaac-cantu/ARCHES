@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from losses.pafl import PAFLLoss
 
 class LossSelector:
 
@@ -27,6 +28,35 @@ class LossSelector:
 
         elif self.loss_type == "physics":
             return self.physics_loss
+        
+        elif self.loss_type == "pafl":
+
+            return PAFLLoss(
+                lambda_temp=self.kwargs.get(
+                    "lambda_temp",
+                    0.1
+                ),
+
+                lambda_rare=self.kwargs.get(
+                    "lambda_rare",
+                    0.1
+                ),
+
+                lambda_res=self.kwargs.get(
+                    "lambda_res",
+                    0.1
+                ),
+
+                alpha=self.kwargs.get(
+                    "alpha",
+                    0.2
+                ),
+
+                beta=self.kwargs.get(
+                    "beta",
+                    0.9
+                )
+            )
 
         else:
             raise ValueError(f"Loss '{self.loss_type}' not supported")
@@ -58,3 +88,5 @@ class LossSelector:
         lambda_ = self.kwargs.get("lambda", 0.1)
 
         return mse + lambda_ * weighted
+    
+    
