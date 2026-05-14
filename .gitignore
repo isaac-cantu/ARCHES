@@ -10,3 +10,5 @@ scripts/
 tests/
 NOTES.md
 DAT005000.csv
+src/mlruns/
+src/mlflow.db

@@ -24,7 +24,8 @@ dependencies = [
     "torchvision",
     "torchaudio",
     "pyyaml",
-    "ipykernel"
+    "ipykernel",
+    "mlflow"
 ]
 
 [project.optional-dependencies]

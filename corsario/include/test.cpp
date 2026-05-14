@@ -6,14 +6,14 @@
 
 int main(){ 
  
-    std::string filename = "/home/icantu24/corsika_data/DAT005000";
+    std::string filename = "/home/icantu24/corsika_data/DAT010000";
     std::string particles_csv = "/home/icantu24/Documents/ARCHES/data/processed/example/particles.csv"; 
     std::string shower_csv = "/home/icantu24/Documents/ARCHES/data/processed/example/shower.csv"; 
- 
+  
     Corsario corsario(filename);             
       
-    corsario.to_csv_ext(particles_csv);   
+    corsario.to_csv_ext(particles_csv);    
     corsario.shower_csv(shower_csv);    
 
     return 0;  
-}               
+}                
