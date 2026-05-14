@@ -1,17 +1,17 @@
 experiment:
-  id: 24
+  id: asinh_10000_huber
   name: "prueba"
   description: "Experimento para reconstrucción de energía y ángulo"
   path: "/home/icantu24/Documents/ARCHES/experiments"
 
 data:
   path: "/home/icantu24/Documents/ARCHES/data/processed/example"
-  input_type: "circle"
-  output: ["zenith"]
+  input_type: "stats"
+  output: ["totral_energy"]
 
 model:
   type: mlp
-  dropout: 0.2
+  dropout: 0.0
   batchnorm: True
 
 training:
@@ -37,12 +37,12 @@ training:
 
 search_space:
   layers: [2,4] #hidden layers
-  neurons: [32,64]
+  neurons: [32,64,128,512]
   seed: [42]
-  activation: ["tanh"]
+  activation: ["relu"]
 
 loss:
-  type: pafl
+  type: huber
 
 metrics:
   - energy_res

@@ -6,7 +6,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
-
+import torch
 
 class TrainPlots:
 
@@ -14,8 +14,8 @@ class TrainPlots:
 
         self.path = Path(path)
 
-        self.preds = np.array(preds)
-        self.targets = np.array(targets)
+        self.preds = 10000 * np.sinh(np.array(preds))
+        self.targets = 10000 * np.sinh(np.array(targets))
 
         self.model_name = model_name
         self.experiment_path = Path(experiment_path)
