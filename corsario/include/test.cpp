@@ -15,5 +15,7 @@ int main(){
     corsario.to_csv_ext(particles_csv);    
     corsario.shower_csv(shower_csv);    
 
+    std::cout<<"Completed!"<<std::endl;
+
     return 0;  
 }                
