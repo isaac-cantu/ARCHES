@@ -1,0 +1,11 @@
+# Example
+
+info:
+  version: 1
+  website: "www"
+
+database:
+  type: "sqlite"
+
+
+name: "Isaac Cantú"

@@ -97,15 +97,18 @@ if __name__ == "__main__":
         )
     # Archivo .md de resumen
     #==========================================
+    set_seed(1)
+
+    # Train - Test - Val - Split
+    train_dataset, val_dataset, test_dataset = split_data(X=input_data, y=output_data, 
+                                                                    train=training_config["split"]["train"], 
+                                                                    val=training_config["split"]["validation"]) #agregar seed
+        
 
     for seed in search_space_config["seed"]:
         model_id = 0
         set_seed(seed)
-
-        # Train - Test - Val - Split
-        train_dataset, val_dataset, test_dataset = split_data(X=input_data, y=output_data, 
-                                                                    train=training_config["split"]["train"], 
-                                                                    val=training_config["split"]["validation"]) #agregar seed
+        
         
     # 2. Ajustar datos
     #print(input_data)
@@ -193,7 +196,7 @@ print("Experiment completed!")
     # 
    
 
-# Me falta gráfica completa
+
 # summary.csv (general)
 # models.json
 # plots/

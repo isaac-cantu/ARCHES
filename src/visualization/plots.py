@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import torch
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 class TrainPlots:
 
@@ -14,8 +15,8 @@ class TrainPlots:
 
         self.path = Path(path)
 
-        self.preds = 10000 * np.sinh(np.array(preds))
-        self.targets = 10000 * np.sinh(np.array(targets))
+        self.preds = preds
+        self.targets = targets
 
         self.model_name = model_name
         self.experiment_path = Path(experiment_path)
@@ -26,6 +27,14 @@ class TrainPlots:
             parents=True,
             exist_ok=True
         )
+
+        self.plots_experiment = self.experiment_path / "plots" / "residuals"
+
+        self.plots_experiment.mkdir(
+            parents=True,
+            exist_ok=True
+        )
+
 
         self.plots_path = self.path / "plots"
 
@@ -74,65 +83,207 @@ class TrainPlots:
 
         plt.close()
 
-    def plot_predictions(self):
+    # ============================================
+    # Prediction vs True
+    # ============================================
+    def plot_predictions(
+        self,
+        gridsize=70
+    ):
 
-        plt.figure(figsize=(6,6))
-
-        plt.scatter(
-            self.targets,
-            self.preds,
-            alpha=0.5
+        # ----------------------------------------
+        # Convert tensors -> numpy
+        # ----------------------------------------
+        targets = (
+            self.targets
+            .detach()
+            .cpu()
+            .numpy()
         )
 
+        preds = (
+            self.preds
+            .detach()
+            .cpu()
+            .numpy()
+        )
+
+        # ----------------------------------------
+        # Figure
+        # ----------------------------------------
+        fig, ax = plt.subplots(
+            figsize=(8,7)
+        )
+
+        ax.set_box_aspect(1)
+        
+        # ----------------------------------------
+        # Hexbin density
+        # ----------------------------------------
+        hb = ax.hexbin(
+
+            targets,
+
+            preds,
+
+            gridsize=gridsize,
+
+            bins="log",
+
+            cmap="viridis",
+
+            mincnt=1
+        )
+
+        # ----------------------------------------
+        # Perfect prediction line
+        # ----------------------------------------
         min_v = min(
-            self.targets.min(),
-            self.preds.min()
+            targets.min(),
+            preds.min()
         )
 
         max_v = max(
-            self.targets.max(),
-            self.preds.max()
+            targets.max(),
+            preds.max()
         )
 
-        plt.plot(
+        ax.plot(
+
             [min_v, max_v],
+
             [min_v, max_v],
-            "--"
+
+            "--",
+
+            color="red",
+
+            linewidth=2,
+
+            alpha=0.8
         )
 
-        plt.title("Prediction vs True")
-        plt.xlabel("True")
-        plt.ylabel("Predicted")
+        # ----------------------------------------
+        # Metrics
+        # ----------------------------------------
+        corr = np.corrcoef(
+            targets,
+            preds
+        )[0,1]
 
+        bias = np.mean(
+            preds - targets
+        )
+
+        resolution = np.std(
+            preds - targets
+        )
+
+        text = (
+
+            f"Correlation = {corr:.4f}\n"
+
+            f"Bias = {bias:.4f}\n"
+
+            f"Resolution = {resolution:.4f}"
+        )
+
+        ax.text(
+
+            0.03,
+
+            0.97,
+
+            text,
+
+            transform=ax.transAxes,
+
+            fontsize=10,
+
+            verticalalignment="top",
+
+            bbox=dict(
+                boxstyle="round",
+                alpha=0.15
+            )
+        )
+
+        # ----------------------------------------
+        # Labels
+        # ----------------------------------------
+        ax.set_title(
+            "Prediction vs True"
+        )
+
+        ax.set_xlabel(
+            "True Energy"
+        )
+
+        ax.set_ylabel(
+            "Predicted Energy"
+        )
+
+        # ----------------------------------------
+        # Optional log scales
+        # ----------------------------------------
+        # ax.set_xscale("log")
+        # ax.set_yscale("log")
+
+        # ----------------------------------------
+        # Colorbar
+        # ----------------------------------------
+        cbar = fig.colorbar(
+            hb,
+            ax=ax
+        )
+
+        cbar.set_label(
+            "Log Counts"
+        )
+
+        # ----------------------------------------
+        # Grid
+        # ----------------------------------------
+        ax.grid(
+            alpha=0.2
+        )
+
+        # ----------------------------------------
+        # Layout
+        # ----------------------------------------
         plt.tight_layout()
 
+        # ----------------------------------------
+        # Save
+        # ----------------------------------------
         plt.savefig(
-            self.plots_path / "pred_vs_true.png"
+
+            self.plots_path /
+
+            "pred_vs_true.png",
+
+            dpi=300,
+
+            bbox_inches="tight"
         )
 
         plt.close()
 
-    def plot_residuals(self):
-
-        residuals = self.preds - self.targets
-
-        plt.figure(figsize=(8,5))
-
-        sns.histplot(
-            residuals,
-            bins=50,
-            kde=True
-        )
-
-        plt.title("Residual")
-        plt.xlabel("Residual")
-
-        plt.tight_layout()
-
-        plt.savefig(
-            self.plots_path / "residuals.png"
-        )
-
+    # ============================================
+    # Residual Distribution
+    # ============================================
+    def plot_residuals(self): 
+        
+        residuals = (self.preds - self.targets)/torch.abs(self.targets)
+        
+        plt.figure(figsize=(8,5)) 
+        
+        sns.histplot( residuals, bins=50, kde=True ) 
+        
+        plt.title("Residual") 
+        plt.xlabel("Residual") 
+        plt.tight_layout() 
+        plt.savefig( self.plots_path / "residuals.png" ) 
         plt.close()
 
     def general_plot(self, plot_name):
@@ -171,15 +322,28 @@ class TrainPlots:
         axes[0].set_ylabel("Loss")
         axes[0].legend()
 
-        # =========================================================
-        # PRED VS TRUE
-        # =========================================================
-        axes[1].scatter(
-            self.targets,
-            self.preds,
-            alpha=0.5
+        # ============================================
+        # Prediction vs True (Hexbin)
+        # ============================================
+
+        hb = axes[1].hexbin(
+
+            self.targets.detach().cpu().numpy(),
+
+            self.preds.detach().cpu().numpy(),
+
+            gridsize=70,
+
+            bins="log",
+
+            cmap="viridis",
+
+            mincnt=1
         )
 
+        # ----------------------------------------
+        # Perfect prediction line
+        # ----------------------------------------
         min_v = min(
             self.targets.min(),
             self.preds.min()
@@ -191,14 +355,52 @@ class TrainPlots:
         )
 
         axes[1].plot(
+
             [min_v, max_v],
+
             [min_v, max_v],
-            "--"
+
+            "--",
+
+            color="red",
+
+            linewidth=2
         )
 
-        axes[1].set_title("Prediction vs True")
-        axes[1].set_xlabel("True")
-        axes[1].set_ylabel("Predicted")
+        # ----------------------------------------
+        # Labels
+        # ----------------------------------------
+        axes[1].set_title(
+            "Prediction vs True"
+        )
+
+        axes[1].set_xlabel(
+            "True"
+        )
+
+        axes[1].set_ylabel(
+            "Predicted"
+        )
+
+        # ----------------------------------------
+        # Optional log scale
+        # ----------------------------------------
+        # axes[1].set_xscale("log")
+        # axes[1].set_yscale("log")
+
+        # ----------------------------------------
+        # Colorbar
+        # ----------------------------------------
+        cbar = plt.colorbar(
+
+            hb,
+
+            ax=axes[1]
+        )
+
+        cbar.set_label(
+            "Log Counts"
+        )
 
         # =========================================================
         # MSE
@@ -344,6 +546,154 @@ class TrainPlots:
             dpi=300
         )
 
+        plt.close()
+
+    # ============================================
+    # Residual vs True Energy
+    # ============================================
+    def residual_vs_ytrue(
+        self, plot_name,
+        bins=100
+    ):
+
+        # ----------------------------------------
+        # Residuals
+        # ----------------------------------------
+        residuals = self.preds - self.targets
+
+        residuals = (
+             (self.preds - self.targets)
+             / (torch.abs(self.targets) + 1e-8)
+        )
+
+        # ----------------------------------------
+        # Figure
+        # ----------------------------------------
+        fig, ax = plt.subplots(
+            figsize=(8,6)
+        )
+
+        # ----------------------------------------
+        # Scatter / density
+        # ----------------------------------------
+        hb = ax.hexbin(
+
+            self.targets,
+
+            residuals,
+
+            gridsize=70,
+
+            bins="log",
+
+            cmap="viridis",
+
+            mincnt=1
+        )
+
+        # ----------------------------------------
+        # Zero residual line
+        # ----------------------------------------
+        ax.axhline(
+
+            0,
+
+            color="red",
+
+            linestyle="--",
+
+            linewidth=2
+        )
+
+        # ----------------------------------------
+        # Labels
+        # ----------------------------------------
+        ax.set_title(
+            "Residuals vs True Energy"
+        )
+
+        ax.set_xlabel(
+            "True Energy"
+        )
+
+        ax.set_ylabel(
+            "Residual (Pred - True)"
+        )
+
+        # ----------------------------------------
+        # Colorbar
+        # ----------------------------------------
+        cbar = fig.colorbar(
+            hb,
+            ax=ax
+        )
+
+        cbar.set_label(
+            "Counts"
+        )
+
+        # ========================================
+        # Right histogram
+        # ========================================
+        divider = make_axes_locatable(ax)
+
+        ax_hist = divider.append_axes(
+
+            "right",
+
+            size="20%",
+
+            pad=0.15,
+
+            sharey=ax
+        )
+
+        # ----------------------------------------
+        # Horizontal histogram
+        # ----------------------------------------
+        ax_hist.hist(
+
+            residuals,
+
+            bins=50,
+
+            orientation="horizontal",
+
+            log=True
+        )
+
+        # ----------------------------------------
+        # Histogram style
+        # ----------------------------------------
+        ax_hist.set_xlabel(
+            "Counts"
+        )
+
+        ax_hist.grid(alpha=0.3)
+
+        plt.setp(
+            ax_hist.get_yticklabels(),
+            visible=False
+        )
+
+        # ----------------------------------------
+        # Layout
+        # ----------------------------------------
+        plt.tight_layout()
+
+        # ----------------------------------------
+        # Save
+        # ----------------------------------------
+
+        plt.savefig(
+            self.plots_path / "residual_vs_ytrue.png",
+            dpi=300
+        )
+
+        plt.savefig(
+            self.experiment_path / "plots" / "residuals" / f"{plot_name}.png",
+            dpi=300
+        )
 
         plt.close()
 
@@ -356,4 +706,6 @@ class TrainPlots:
         self.plot_residuals()
 
         self.general_plot(plot_name)
+
+        self.residual_vs_ytrue(plot_name,100)
 

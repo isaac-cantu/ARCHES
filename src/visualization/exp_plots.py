@@ -41,48 +41,45 @@ class ExpPlots:
         metric="rmse"
     ):
 
-        seeds = self.df["seed"].unique()
+        # ---------------------------------
+        # Fixed configuration groups
+        # ---------------------------------
+        group_cols = [
 
-        for seed in seeds:
+            "seed",
 
-            seed_df = (
-                self.df[
-                    self.df["seed"] == seed
-                ]
-            )
+            "batch_size",
 
-            # -----------------------------
-            # General parameters
-            # -----------------------------
-            activation = (
-                seed_df["activation"]
-                .iloc[0]
-            )
+            "activation",
 
-            optimizer = (
-                seed_df["optimizer"]
-                .iloc[0]
-            )
+            "optimizer",
 
-            loss = (
-                seed_df["loss"]
-                .iloc[0]
-            )
+            "loss",
 
-            dropout = (
-                seed_df["dropout"]
-                .iloc[0]
-            )
+            "dropout",
 
-            batchnorm = (
-                seed_df["batchnorm"]
-                .iloc[0]
-            )
+            "batchnorm"
+        ]
 
-            # -----------------------------
+        # ---------------------------------
+        # Iterate groups
+        # ---------------------------------
+        for keys, group_df in self.df.groupby(group_cols):
+
+            (
+                seed,
+                batch_size,
+                activation,
+                optimizer,
+                loss,
+                dropout,
+                batchnorm
+            ) = keys
+
+            # ---------------------------------
             # Pivot table
-            # -----------------------------
-            pivot = seed_df.pivot_table(
+            # ---------------------------------
+            pivot = group_df.pivot_table(
 
                 values=metric,
 
@@ -93,40 +90,87 @@ class ExpPlots:
                 aggfunc="mean"
             )
 
-            # -----------------------------
+            # ---------------------------------
+            # Skip empty pivots
+            # ---------------------------------
+            if pivot.empty:
+                continue
+
+            # ---------------------------------
             # Plot
-            # -----------------------------
+            # ---------------------------------
             plt.figure(figsize=(8,6))
 
             sns.heatmap(
+
                 pivot,
+
                 annot=True,
+
                 fmt=".4f",
+
                 cmap="viridis"
             )
 
+            # ---------------------------------
+            # Title
+            # ---------------------------------
             plt.title(
 
                 f"{metric.upper()} Heatmap\n"
 
                 f"Seed={seed} | "
+
+                f"Batch={batch_size} | "
+
                 f"Act={activation} | "
+
                 f"Loss={loss} | "
+
                 f"Opt={optimizer} | "
+
                 f"Dropout={dropout} | "
+
                 f"BN={batchnorm}"
             )
 
+            # ---------------------------------
+            # Labels
+            # ---------------------------------
             plt.xlabel("Width")
+
             plt.ylabel("Hidden Layers")
 
             plt.tight_layout()
 
+            # ---------------------------------
+            # File name
+            # ---------------------------------
+            filename = (
+
+                f"heatmap_"
+
+                f"S{seed}_"
+
+                f"B{batch_size}_"
+
+                f"{activation}_"
+
+                f"{optimizer}_"
+
+                f"{loss}_"
+
+                f"D{dropout}_"
+
+                f"BN{batchnorm}.png"
+            )
+
+            # ---------------------------------
+            # Save
+            # ---------------------------------
             plt.savefig(
 
-                self.plot_path /
-
-                f"heatmap_seed_{seed}.png"
+                self.plot_path / filename
             )
 
             plt.close()
@@ -151,7 +195,8 @@ class ExpPlots:
             "loss",
             "optimizer",
             "dropout",
-            "batchnorm"
+            "batchnorm",
+            "batch_size"
         ]
 
         grouped = (
@@ -197,7 +242,9 @@ class ExpPlots:
 
                 f"{row['activation']} | "
 
-                f"{row['optimizer']}"
+                f"{row['optimizer']} | "
+
+                f"B{row['batch_size']} "
             )
 
             labels.append(label)
@@ -276,7 +323,8 @@ class ExpPlots:
             "loss",
             "optimizer",
             "dropout",
-            "batchnorm"
+            "batchnorm",
+            "batch_size"
         ]
 
         for i, metric in enumerate(metrics):
@@ -291,6 +339,10 @@ class ExpPlots:
 
                 .reset_index()
             )
+
+            if metric == "bias":
+
+                grouped["mean"] = grouped["mean"].abs()
 
             # --------------------------------------------
             # R2 se maximiza
@@ -317,7 +369,8 @@ class ExpPlots:
                 (
                     f"L{r['layers']} | "
                     f"W{r['width']} | "
-                    f"{r['activation']}"
+                    f"{r['activation']} | "
+                    f"B{r['batch_size']} "
                 )
 
                 for _, r in best_models.iterrows()
@@ -419,3 +472,8 @@ class ExpPlots:
         self.metrics_grid_plot()
 
         self.correlation_heatmap()
+
+
+if __name__ == "__main__":
+    path = "/home/icantu24/Documents/ARCHES/experiments/exp_H_2_8_N_8_512_mse_relu_4S_stats_log1p"
+    ExpPlots(path).plot_all()

@@ -1,0 +1,395 @@
+def var_stat(variable = None) -> list:
+
+    media = np.mean(variable)
+    desviacion_media = np.mean(np.abs(variable - media))
+
+    return [media, desviacion_media]
+
+def grid_generator(n:int = 8, df_particles = None):
+
+    showers = df_particles["shower"].unique()
+    x_mm = np.array([df_particles.x.min(), df_particles.x.max()], dtype="float32")
+    y_mm = np.array([df_particles.y.min(), df_particles.y.max()], dtype="float32")
+
+    grid_x_size = (x_mm[1] - x_mm[0])/n
+    grid_y_size = (y_mm[1] - y_mm[0])/n
+
+    grid_x = np.full((n+1),x_mm[0]) + np.arange(n+1)*np.full((n+1), grid_x_size)
+    grid_y = np.full((n+1),y_mm[0]) + np.arange(n+1)*np.full((n+1), grid_y_size)
+
+
+    grid_data = np.zeros((len(showers),6,n,n))
+
+    for i, shower in enumerate(showers):
+
+        data = df_particles[df_particles["shower"]==shower]
+
+        for j in range(n):
+
+            for k in range(n):
+                data_n = data[(
+                    ((data["x"] >= grid_x[j]) & (data["x"] < grid_x[j+1])) &
+                    ((data["y"] >= grid_y[k]) & (data["y"] < grid_y[k+1]))
+                    )]
+
+                energy = var_stat(data_n["energy"])
+                time = var_stat(data_n["t"])
+
+                grid_data[i,:,j,k] = [data_n["x"].sum(),
+                                      data_n["energy"].sum(),
+                                      energy[0],
+                                      energy[1],
+                                      time[0],
+                                      time[1]]
+                
+    return grid_data
+
+grid_generator(df_particles=particles)
+
+
+import numpy as np
+import torch
+from torch.utils.data import DataLoader, TensorDataset
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
+import matplotlib.pyplot as plt
+import pandas as pd
+
+df_particles= pd.read_csv("/home/icantu24/Documents/corsario/dat_files/corsario_5000.csv")
+df_shower = pd.read_csv("/home/icantu24/Documents/corsario/dat_files/shower_corsario_5000.csv")
+
+# ─────────────────────────────────────────────
+# 1. CONSTRUCCIÓN DE LA GRILLA
+# ─────────────────────────────────────────────
+
+def grid_generator_fast(n=8, df_particles=None, df_shower=None):
+    # Orden de showers reproducible para que el target quede alineado
+    showers = np.sort(df_particles["shower"].unique())
+    n_showers = len(showers)
+
+    df = df_particles.copy()
+
+    # Bug 3 ✓ — centrar ANTES de calcular los bins
+    df["x"] = df.groupby("shower")["x"].transform(lambda x: x - x.mean())
+    df["y"] = df.groupby("shower")["y"].transform(lambda y: y - y.mean())
+
+    # Bins sobre coordenadas ya centradas
+    x_bins = np.linspace(df["x"].min(), df["x"].max(), n + 1)
+    y_bins = np.linspace(df["y"].min(), df["y"].max(), n + 1)
+
+    df["ix"] = np.digitize(df["x"], x_bins) - 1
+    df["iy"] = np.digitize(df["y"], y_bins) - 1
+
+    # Eliminar partículas fuera de rango (borde superior de np.digitize)
+    df = df[
+        (df["ix"] >= 0) & (df["ix"] < n) &
+        (df["iy"] >= 0) & (df["iy"] < n)
+    ]
+
+    grouped = df.groupby(["shower", "ix", "iy"])
+    stats = grouped.agg(
+        count       = ("energy", "size"),
+        energy_sum  = ("energy", "sum"),
+        energy_mean = ("energy", "mean"),
+        energy_std  = ("energy", "std"),
+        time_mean   = ("t",      "mean"),
+    ).reset_index()
+
+    # Bug shape ✓ — (n_showers, 5, n, n): canales primero para que el reshape
+    # serialice correctamente como [canal_0_celda_0, canal_0_celda_1, ...]
+    grid = np.zeros((n_showers, 5, n, n), dtype=np.float32)
+    shower_to_idx = {sh: i for i, sh in enumerate(showers)}
+
+    for _, row in stats.iterrows():
+        i = shower_to_idx[row["shower"]]
+        j = int(row["ix"])
+        k = int(row["iy"])
+        # Bug shape ✓ — grid[i, :, j, k] selecciona los 5 canales correctamente
+        grid[i, :, j, k] = [
+            row["count"],
+            row["energy_sum"],
+            row["energy_mean"],
+            row["energy_std"] if not np.isnan(row["energy_std"]) else 0.0,
+            row["time_mean"],
+        ]
+
+    # Bug alineamiento ✓ — reordenar df_shower según el mismo orden de showers
+    # para garantizar que grid[i] corresponde a total_energy[i]
+    shower_df = df_shower.set_index("event_no")
+    total_energy = np.array(
+        [shower_df.loc[int(sh), "total_energy"] for sh in showers],
+        dtype=np.float32,
+    )
+
+    # Aplanar manteniendo orden (n_showers, 5*n*n)
+    X = grid.reshape(n_showers, 5 * n * n)
+
+    return X, total_energy
+
+
+# ─────────────────────────────────────────────
+# 2. SPLIT Y NORMALIZACIÓN
+# ─────────────────────────────────────────────
+
+def split_data(
+    X: np.ndarray,
+    y: np.ndarray,
+    train: int = 70,
+    test:  int = 15,
+    val:   int = 15,
+    seed:  int = 42,
+):
+    if train + test + val != 100:
+        raise ValueError("Los splits deben sumar 100")
+
+    # Split 1: train vs temp
+    X_train, X_temp, y_train, y_temp = train_test_split(
+        X, y,
+        train_size=train / 100,
+        shuffle=True,
+        random_state=seed,
+    )
+
+    # Split 2: val vs test
+    split = test / (test + val)
+    X_test, X_val, y_test, y_val = train_test_split(
+        X_temp, y_temp,
+        train_size=split,
+        shuffle=True,
+        random_state=seed,
+    )
+
+    # Normalización usando SOLO estadísticas de train
+    X_mean = X_train.mean(axis=0)   # por feature, no escalar global
+    X_std  = X_train.std(axis=0) + 1e-8
+
+    X_train_norm = (X_train - X_mean) / X_std
+    X_val_norm   = (X_val   - X_mean) / X_std  # Bug 1 ✓ — nombres distintos
+    X_test_norm  = (X_test  - X_mean) / X_std  # Bug 1 ✓
+
+    def to_tensor(arr):
+        return torch.tensor(arr, dtype=torch.float32)
+
+    train_dataset = TensorDataset(to_tensor(X_train_norm), to_tensor(y_train))
+    val_dataset   = TensorDataset(to_tensor(X_val_norm),   to_tensor(y_val))
+    test_dataset  = TensorDataset(to_tensor(X_test_norm),  to_tensor(y_test))  # Bug 2 ✓
+
+    # Guardar scaler correctamente para poder invertir la normalización luego
+    scaler = StandardScaler()
+    scaler.mean_  = X_mean
+    scaler.scale_ = X_std
+    scaler.n_features_in_ = X_train.shape[1]
+
+    return train_dataset, val_dataset, test_dataset, scaler
+
+
+# ─────────────────────────────────────────────
+# 3. PIPELINE COMPLETO
+# ─────────────────────────────────────────────
+
+input_data, total_energy = grid_generator_fast(
+    n=8,
+    df_particles=df_particles,
+    df_shower=df_shower,
+)
+
+# Sanity check — verifica que X e y estén alineados antes de continuar
+print("input_data shape :", input_data.shape)    # (N, 320)
+print("total_energy shape:", total_energy.shape)  # (N,)
+print("energy min/max   :", total_energy.min(), total_energy.max())
+print("zeros en X       :", (input_data == 0).all(axis=1).sum(), "showers vacíos")
+
+# Aplicar log1p al target (después de verificar que no hay negativos)
+assert (total_energy >= 0).all(), "Hay energías negativas, revisa df_shower"
+y_log = np.log1p(total_energy)
+
+# Split y normalización
+train_dataset, val_dataset, test_dataset, scaler = split_data(
+    X=input_data,
+    y=y_log,
+    train=70,
+    test=15,
+    val=15,
+    seed=42,
+)
+
+# DataLoaders
+batch = 32
+
+train_loader = DataLoader(train_dataset, batch_size=batch, shuffle=True)
+val_loader   = DataLoader(val_dataset,   batch_size=batch, shuffle=False)
+test_loader  = DataLoader(test_dataset,  batch_size=batch, shuffle=False)
+
+print("\nTrain batches:", len(train_loader))
+print("Val   batches:", len(val_loader))
+print("Test  batches:", len(test_loader))
+
+# Verificación de shapes del primer batch
+X_batch, y_batch = next(iter(train_loader))
+print("\nX batch shape:", X_batch.shape)  # (32, 320)
+print("y batch shape:", y_batch.shape)   # (32,)
+print("y batch sample:", y_batch[:5])    # valores distintos = target bien asignado
+
+def grid_generator_fast(n=8, df_particles=None, df_shower=None):
+
+    showers = df_particles["shower"].unique()
+    n_showers = len(showers)
+
+    # bins globales (NO percentiles)
+    x_bins = np.linspace(df_particles["x"].min(), df_particles["x"].max(), n+1)
+    y_bins = np.linspace(df_particles["y"].min(), df_particles["y"].max(), n+1)
+
+    # centrar por shower
+    df = df_particles.copy()
+    df["x"] = df.groupby("shower")["x"].transform(lambda x: x - x.mean())
+    df["y"] = df.groupby("shower")["y"].transform(lambda y: y - y.mean())
+
+    df["ix"] = np.digitize(df["x"], x_bins) - 1
+    df["iy"] = np.digitize(df["y"], y_bins) - 1
+
+    df = df[(df["ix"] >= 0) & (df["ix"] < n) &
+            (df["iy"] >= 0) & (df["iy"] < n)]
+
+    grouped = df.groupby(["shower", "ix", "iy"])
+
+    stats = grouped.agg(
+        count=("energy","size"),
+        energy_sum=("energy","sum"),
+        energy_mean=("energy","mean"),
+        energy_std=("energy","std"),
+        time_mean=("t","mean"),
+    ).reset_index()
+
+    grid = np.zeros((n_showers, 5, n, n))
+    shower_to_idx = {sh:i for i,sh in enumerate(showers)}
+
+    for _, row in stats.iterrows():
+        i = shower_to_idx[row["shower"]]
+        j = int(row["ix"])
+        k = int(row["iy"])
+
+        grid[i,:,j,k] = [
+            row["count"],
+            row["energy_sum"],
+            row["energy_mean"],
+            row["energy_std"] if not np.isnan(row["energy_std"]) else 0,
+            row["time_mean"]
+        ]
+
+    #return grid
+    output_data = df_shower[df_shower["event_no"].isin(showers)].values
+
+    return grid.reshape(grid.shape[0],5*n**2), output_data
+
+input_data, output_data = grid_generator_fast(n=8, df_particles=df_particles, df_shower=df_shower)
+
+
+
+
+GRID = 8
+
+features = ["x","y","energy","t"]
+
+# rangos espaciales
+x_bins = np.linspace(df_particles["x"].min(), df_particles["x"].max(), GRID+1)
+y_bins = np.linspace(df_particles["y"].min(), df_particles["y"].max(), GRID+1)
+
+
+def build_tensor(shower_particles):
+
+    tensor = np.zeros((GRID, GRID, 5))
+
+    for i in range(GRID):
+        for j in range(GRID):
+
+            mask = (
+                (shower_particles["x"] >= x_bins[i]) &
+                (shower_particles["x"] < x_bins[i+1]) &
+                (shower_particles["y"] >= y_bins[j]) &
+                (shower_particles["y"] < y_bins[j+1])
+            )
+
+            cell = shower_particles[mask]
+
+            if len(cell) > 0:
+
+                energies = cell["energy"].values
+                times = cell["t"].values
+
+                tensor[i,j,0] = len(cell)                # conteo
+                tensor[i,j,1] = energies.sum()           # energía total
+                tensor[i,j,2] = energies.mean()          # energía media
+                tensor[i,j,3] = energies.std()           # std energía
+                tensor[i,j,4] = times.mean()             # tiempo medio
+
+    return tensor
+
+X = []
+y = []
+
+for shower_id, group in df_particles.groupby("shower"):
+
+    tensor = build_tensor(group)
+
+    X.append(tensor)
+
+    energy = df_shower.loc[
+        df_shower["event_no"] == int(shower_id),
+        "total_energy"
+    ].values[0]
+
+    y.append(energy)
+
+X = np.array(X)
+y = np.array(y)
+
+print("Shape X:", X.shape)
+print("Shape y:", y.shape)
+
+import torch
+
+X = torch.tensor(X, dtype=torch.float32)
+y = torch.tensor(y, dtype=torch.float32).unsqueeze(1)
+
+X = (X - X.mean()) / (X.std() + 1e-8)
+y = np.log1p(y)
+
+
+from torch.utils.data import Dataset, DataLoader
+
+class ShowerDataset(Dataset):
+
+    def __init__(self, X, y):
+        self.X = X
+        self.y = y
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, idx):
+
+        grid = self.X[idx].reshape(-1)#.permute(2,0,1)  # (channels,8,8)
+        target = self.y[idx]
+
+        return grid, target
+
+
+from torch.utils.data import DataLoader, random_split
+
+dataset = ShowerDataset(X,y)
+
+train_size = int(0.8 * len(dataset))
+val_size = len(dataset) - train_size
+
+train_dataset, val_dataset = random_split(dataset,[train_size,val_size])
+
+train_loader = DataLoader(train_dataset,batch_size=32,shuffle=True)
+val_loader = DataLoader(val_dataset,batch_size=32)
+
+
+===========================================
+

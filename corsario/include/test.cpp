@@ -6,7 +6,7 @@
 
 int main(){ 
  
-    std::string filename = "/home/icantu24/corsika_data/DAT010000";
+    std::string filename = "/home/icantu24/corsika_data/DAT099999";
     std::string particles_csv = "/home/icantu24/Documents/ARCHES/data/processed/example/particles.csv"; 
     std::string shower_csv = "/home/icantu24/Documents/ARCHES/data/processed/example/shower.csv"; 
   

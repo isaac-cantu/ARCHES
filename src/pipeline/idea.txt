@@ -2,21 +2,26 @@ experiments/
 │
 ├── exp_001/
 │   ├── config.yaml
-│   ├── summary.json
+│   ├── summary.csv
 │   │
-│   ├── models/
-│   │   ├── model_001/
-│   │   ├── model_002/
-│   │   ├── model_003/
-│   │   └── ...
-│   │
+│   ├── models_n/
+        ├── config.yaml
+│   │   ├── seed_n/
+│   │   ├── seed_n/
+│   │   ├── seed_n/
+            ├── plots/
+            ├── best_model.pth
+            ├── config.yaml
+            ├── history.json
+│   │       └── metrics.json
+│   │   
 │   ├── plots/
-│   │
+│   ├── data_plots/
+│   ├── genera_plots/
 │   └── comparisons/
 │
 ├── exp_002/
-│
-└── master_results.csv
+
 
 
 model_001/

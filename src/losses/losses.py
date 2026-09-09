@@ -8,6 +8,9 @@ class LossSelector:
         self.loss_type = loss_type.lower()
         self.kwargs = kwargs
 
+    def loss_type(self):
+        return self.loss_type
+
     def get_loss(self):
 
         if self.loss_type == "mse":
@@ -34,27 +37,27 @@ class LossSelector:
             return PAFLLoss(
                 lambda_temp=self.kwargs.get(
                     "lambda_temp",
-                    0.1
+                    0.25 #0.1
                 ),
 
                 lambda_rare=self.kwargs.get(
                     "lambda_rare",
-                    0.1
+                    0.5 #0.1
                 ),
 
                 lambda_res=self.kwargs.get(
                     "lambda_res",
-                    0.1
+                    0.25 #0.1
                 ),
 
                 alpha=self.kwargs.get(
                     "alpha",
-                    0.2
+                    0.75 #0.2
                 ),
 
                 beta=self.kwargs.get(
                     "beta",
-                    0.9
+                    0.8 #0.9
                 )
             )
 

@@ -6,7 +6,7 @@
 int main(int argc, char* argv[]) {
 
     // Paths can be overridden via command-line args for convenience
-    std::string dat_file     = (argc > 1) ? argv[1] : "/home/icantu24/corsika_data/DAT010000";
+    std::string dat_file     = (argc > 1) ? argv[1] : "/home/icantu24/corsika_data/DAT099999";
     std::string particles_csv = (argc > 2) ? argv[2] : "particles_ext.csv";
     std::string shower_csv    = (argc > 3) ? argv[3] : "shower.csv";
 

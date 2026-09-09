@@ -91,6 +91,7 @@ def model_information(config, model_params, exp_path):
             "type": data_config["input_type"],
             "output": data_config["output"],
             "input_dim": model_params["input_dim"],
+            "scale": data_config["scale"]
         }
     }
 
@@ -125,6 +126,7 @@ def model_information(config, model_params, exp_path):
                     "type": data_config["input_type"],
                     "output": data_config["output"],
                     "input_dim": model_params["input_dim"],
+                    "scale": data_config["scale"]
                 }
             }
 

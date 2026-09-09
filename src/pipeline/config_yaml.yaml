@@ -1,5 +1,5 @@
 experiment:
-  id: 1
+  id: 1_Dropout
   name: "prueba"
   description: "Reconstrucción de energía y ángulo"
 
@@ -27,7 +27,7 @@ model:
   activation: relu
 
   regularization:
-    dropout: 0.0
+    dropout: 0.3
     batchnorm: false
 
 training:

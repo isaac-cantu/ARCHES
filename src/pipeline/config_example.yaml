@@ -1,22 +1,23 @@
 experiment:
-  id: asinh_10000_huber
+  id: prueba2_H_1_5_N_16_64_256_pafl_relu_3S_stats_log1p
   name: "prueba"
-  description: "Experimento para reconstrucción de energía y ángulo"
+  description: "Experimento para reconstrucción de energía en escala log1p"
   path: "/home/icantu24/Documents/ARCHES/experiments"
 
 data:
   path: "/home/icantu24/Documents/ARCHES/data/processed/example"
   input_type: "stats"
-  output: ["totral_energy"]
+  scale: "log1p"
+  output: ["total_energy"]
 
 model:
   type: mlp
   dropout: 0.0
-  batchnorm: True
+  batchnorm: False
 
 training:
   epochs: 100
-  batch_size: [32]
+  batch_size: [64]
   
   optimizer:
     type: adam
@@ -36,13 +37,13 @@ training:
     type: reduce_on_plateau
 
 search_space:
-  layers: [2,4] #hidden layers
-  neurons: [32,64,128,512]
-  seed: [42]
-  activation: ["relu"]
+  layers: [1,3,5] #hidden layers
+  neurons: [16,64,256]
+  seed: [1]
+  activation: ["relu"]  
 
 loss:
-  type: huber
+  type: pafl
 
 metrics:
   - energy_res

@@ -1,10 +1,12 @@
 from losses.losses import LossSelector
+from physics.scaler import OutputScale
 from optimizers.scheduler_selector import SchedulerSelector
 from evaluation.evaluate import evaluate_training, evaluate_model
 import torch
 import json 
 import pandas as pd 
 from pathlib import Path
+import copy
 
 def to_serializable(obj):
 
@@ -15,13 +17,16 @@ def to_serializable(obj):
 
 class Trainer:
 
-    def __init__(self, model, loss_criterion, optimizer, device="cpu", path:str=None):
+    def __init__(self, model, loss_criterion, optimizer, device="cpu", path:str=None, scale=None):
         
         self.model = model
+        self.loss_criterion = loss_criterion
         self.criterion = LossSelector(loss_type=loss_criterion).get_loss()
         self.optimizer = optimizer
         self.device = device
         self.path = path
+
+        self.output_transform = OutputScale(method=scale)
 
         self.history = {
 
@@ -79,7 +84,34 @@ class Trainer:
 
         for key, value in metrics_data.items():
 
-            self.history[set_type][key].append(value.item())    
+            self.history[set_type][key].append(value.item())  
+
+    def forward_step(self, x, y, type):
+
+        y_scaled = self.output_transform.transform(y)
+
+        pred_scaled = self.model(x).squeeze()
+
+        if self.loss_criterion == "pafl" and type == "val":
+            pafl_val = LossSelector(loss_type="mse").get_loss()
+            loss = pafl_val(
+                pred_scaled,
+                y_scaled.squeeze()
+            )
+            #print("1")
+
+        else:
+            loss = self.criterion(
+                pred_scaled,
+                y_scaled.squeeze()
+            )
+
+        pred_real = (
+            self.output_transform
+            .inverse_transform(pred_scaled)
+        )
+
+        return loss, pred_real  
 
     def train(self, epochs, early_stopping=True, patience=10, scheduler=None):
 
@@ -96,9 +128,8 @@ class Trainer:
 
                 x = x.to(self.device)
                 y = y.to(self.device)
-
-                pred = self.model(x)
-                loss = self.criterion(pred, y)
+                
+                loss, pred_real = self.forward_step(x, y, "train")
 
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -106,7 +137,7 @@ class Trainer:
 
                 train_loss += loss.item()
 
-                train_preds.append(pred.detach().cpu())
+                train_preds.append(pred_real.detach().cpu())
                 train_targets.append(y.detach().cpu())
 
             train_loss /= len(self.train_loader)
@@ -130,12 +161,11 @@ class Trainer:
                     x = x.to(self.device)
                     y = y.to(self.device)
 
-                    pred = self.model(x)
-                    loss = self.criterion(pred, y)
+                    loss, pred_real = self.forward_step(x, y, "val")
 
                     val_loss += loss.item()
 
-                    val_preds.append(pred.detach().cpu())
+                    val_preds.append(pred_real.detach().cpu())
                     val_targets.append(y.detach().cpu())
 
             val_loss /= len(self.val_loader)
@@ -192,7 +222,7 @@ class Trainer:
 
                     self.history["best_epoch"]["epoch"] = epoch + 1
 
-                    best_model = self.model
+                    best_model = copy.deepcopy(self.model)
                     
         self.model = best_model
 
@@ -228,6 +258,8 @@ class Trainer:
                 y = y.to(self.device)
 
                 pred = self.model(x)
+
+                pred = self.output_transform.inverse_transform(pred)
 
                 preds.append(pred.detach().cpu())
                 targets.append(y.detach().cpu())
