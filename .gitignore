@@ -3,7 +3,7 @@
 corsario/.venv_corsario
 corsario/bindings
 raw_data/
-experiments/
+project_experiments/
 notebook/
 reports/
 scripts/
