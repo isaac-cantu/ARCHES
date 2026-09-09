@@ -2,7 +2,7 @@
 .directory
 corsario/.venv_corsario
 corsario/bindings
-data/
+raw_data/
 experiments/
 notebook/
 reports/
