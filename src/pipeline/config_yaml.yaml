@@ -1,0 +1,93 @@
+# NOTE (review): this file uses an different/older schema than the one
+# run_pipeline.py actually reads (compare to config_example.yaml, which is
+# the one matching pipeline/utils.py's model_information()): here it's
+# "paths:" instead of "experiment.path", "model.architecture.layers"
+# instead of a flat "layers" in search_space, "search:" instead of
+# "search_space:", "metrics.enabled:" instead of a flat list, etc. Running
+# `run_pipeline.py -c pipeline/config_yaml.yaml` as-is will raise KeyError.
+# Keeping the file since it may be a draft for a future config revision,
+# but config_example.yaml is the one that is currently wired up and safe
+# to use/copy from.
+experiment:
+  id: 1_Dropout
+  name: "prueba"
+  description: "Reconstrucción de energía y ángulo"
+
+paths:
+  experiments: "/home/icantu24/Documents/ARCHES/experiments"
+  data: "/home/icantu24/Documents/ARCHES/data/processed/example"
+
+data:
+  input_type: "circle"
+  output:
+    - energy
+
+  split:
+    train: 0.70
+    validation: 0.15
+    test: 0.15
+
+model:
+  type: mlp
+
+  architecture:
+    layers: 2
+    neurons: 64
+
+  activation: relu
+
+  regularization:
+    dropout: 0.3
+    batchnorm: false
+
+training:
+  epochs: 50
+  batch_size: 32
+  seed: 42
+
+  optimizer:
+    type: 
+    lr: 1e-3
+    weight_decay: 0.0
+
+  scheduler:
+    enabled: false
+    type: reduce_on_plateau
+
+  early_stopping:
+    enabled: true
+    patience: 10
+
+loss:
+  type: mse
+
+metrics:
+  enabled:
+    - mse
+    - mae
+    - rmse
+    - r2
+    - energy_res
+
+search:
+  enabled: true
+
+  method: grid
+
+  parameters:
+
+    layers:
+      - 2
+      - 3
+
+    neurons:
+      - 32
+      - 64
+
+    activation:
+      - relu
+      - gelu
+
+    seed:
+      - 42
+      - 123

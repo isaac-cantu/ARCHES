@@ -1,0 +1,75 @@
+# Architecture + hyperparameter search config -- see docs/SEARCH.md.
+#
+# Run with:
+#   cd src && python search/run_search.py --config pipeline/config_search_example.yaml
+# Then:
+#   python search/report.py --search-dir <search.path>/search_<search.id>
+
+search:
+  id: arch_search_v1
+  name: "ARCHES architecture search"
+  description: "Compare MLP vs CNN, input representations, and losses for primary-energy regression"
+  path: "/path/to/experiments"          # <-- set this; search_<id>/ is created here
+
+  # Data source: EITHER a raw CORSIKA file (via corsario) ...
+  dat_file: null                        # e.g. "/path/to/DAT000001"
+  # ... OR a directory with particles.csv + shower.csv (used if dat_file is null)
+  data_path: "/path/to/processed/example"
+
+  output: ["total_energy"]
+  scale: log1p                          # applied to the target inside Trainer
+
+  strategy: grid                        # grid | random
+  n_samples: 50                         # only used when strategy: random
+  sampling_seed: 0
+
+  seed_split: 1                         # fixed seed for the train/val/test split,
+                                         # shared by every run so comparisons are apples-to-apples
+  split: {train: 0.70, validation: 0.15}   # test = 1 - train - val
+
+  epochs: 60
+  early_stopping: {enabled: true, patience: 10}
+  batch_size: [64]                      # default batch size(s), overridable per architecture below
+  use_mlflow: false                     # set true to also log every run to MLflow
+
+# One block per architecture. Anything not in space.IMPLEMENTED_ARCHITECTURES
+# (currently: mlp, cnn) is reported and skipped, e.g. add a `kan:` block here
+# once models/kan.py is implemented and it will start being included.
+architectures:
+
+  mlp:
+    input_types: [stats, grid, circle]
+    layers: [1, 2, 3]          # depth
+    neurons: [32, 64, 128]     # width
+    activation: [relu, gelu]
+    dropout: [0.0, 0.2]
+    batchnorm: [false]
+    loss: [mse, mae, pafl]
+    optimizer: [adam]
+    lr: [0.001]
+    scheduler: {enabled: true, type: plateau}
+    seeds: [1, 2, 3]
+
+  cnn:
+    input_types: [grid]        # CNN only makes sense on the spatial grid representation
+    layers: [2, 3]             # number of conv blocks (depth)
+    neurons: [8, 16]           # base channel count (width); doubles each block
+    activation: [relu]
+    dropout: [0.0]
+    batchnorm: [true]
+    loss: [mse]
+    optimizer: [adam]
+    lr: [0.001]
+    scheduler: {enabled: true, type: plateau}
+    seeds: [1, 2]
+
+# ---------------------------------------------------------------------------
+# LARGE FILES (millions of showers): replace search.dat_file/data_path above
+# with search.feature_dir instead, pointing at the output of
+# `python data/build_feature_dataset.py --dat-file ... --out-dir ...`
+# (run once; see docs/SEARCH.md#large-files). Example:
+#
+# search:
+#   feature_dir: "/data/features/run1"
+#   # dat_file / data_path are ignored when feature_dir is set
+# ---------------------------------------------------------------------------

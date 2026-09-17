@@ -1,0 +1,25 @@
+.venv/
+.directory
+corsario/.venv_corsario
+corsario/bindings
+raw_data/
+project_experiments/
+notebook/
+reports/
+NOTES.md
+DAT005000.csv
+src/mlruns/
+src/mlflow.db
+scripts_prueba/
+
+# Added in this review: __pycache__/*.pyc were previously committed
+# (compiled with a python3.14 interpreter, inconsistent with any actual
+# dev environment) -- removed from tracking, ignored from now on.
+__pycache__/
+*.py[cod]
+
+# `scripts/` used to be blanket-ignored, which would have silently
+# excluded scripts/slurm_train.sh (added in this review) from version
+# control. If you still want to keep ad hoc/local scripts untracked,
+# ignore them individually instead of the whole directory, e.g.:
+#   scripts/local_*.sh

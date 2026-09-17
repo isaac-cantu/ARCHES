@@ -1,0 +1,78 @@
+# Bayesian optimization (TPE) + early pruning over the same discrete
+# choices used by strategy: grid/random -- see docs/SEARCH.md#optuna.
+# This is what to reach for once a grid search's combination count gets
+# too large to run exhaustively (see the "Avoiding a factorial explosion"
+# section of docs/SEARCH.md).
+#
+# Single-process run:
+#   cd src && python search/run_search.py --config pipeline/config_search_optuna_example.yaml
+#
+# Parallel (shared study, e.g. a SLURM array): see scripts/slurm_search_optuna.sh
+
+search:
+  id: optuna_search_v1
+  name: "ARCHES optuna search"
+  description: "TPE + median pruning over the same space as config_search_example.yaml"
+  path: "/path/to/experiments"
+
+  feature_dir: "/path/to/features/run1"   # or dat_file / data_path, see config_search_example.yaml
+
+  output: ["total_energy"]
+  scale: log1p
+
+  strategy: optuna
+  seed_split: 1
+  split: {train: 0.70, validation: 0.15}
+
+  epochs: 60
+  early_stopping: {enabled: true, patience: 10}
+  batch_size: [64]
+  use_mlflow: false
+
+  optuna:
+    n_trials: 50              # per worker -- see scripts/slurm_search_optuna.sh for parallel workers
+    objective_metric: resolution   # any results.csv column; direction looked up in search/metric_direction.py
+    pruning:
+      enabled: true
+      n_warmup_steps: 5       # don't prune before this many epochs have run
+    sampler_seed: 0           # reproducibility of the TPE sampler's own randomness
+    # For parallel workers sharing one study (see scripts/slurm_search_optuna.sh):
+    # storage: "sqlite:////path/to/experiments/optuna_search_v1.db"
+    # study_name: "optuna_search_v1"
+
+# Same schema as config_search_example.yaml's architectures block -- Optuna
+# samples from these same discrete lists (via TPE, not exhaustively), it
+# does not need a different config format.
+architectures:
+
+  mlp:
+    input_types: [stats, grid, circle]
+    layers: [1, 2, 3, 4]
+    neurons: [16, 32, 64, 128, 256]
+    activation: [relu, gelu, tanh, elu]
+    dropout: [0.0, 0.1, 0.2, 0.3]
+    batchnorm: [false, true]
+    loss: [mse, mae, pafl]
+    optimizer: [adam, adamw]
+    lr: [0.01, 0.003, 0.001, 0.0003, 0.0001]
+    scheduler: {enabled: true, type: plateau}
+    seeds: [1, 2, 3]
+
+  cnn:
+    input_types: [grid]
+    layers: [2, 3, 4]
+    neurons: [8, 16, 32]
+    activation: [relu, gelu]
+    dropout: [0.0, 0.2]
+    batchnorm: [true]
+    loss: [mse, mae]
+    optimizer: [adam]
+    lr: [0.01, 0.001, 0.0001]
+    scheduler: {enabled: true, type: plateau}
+    seeds: [1, 2]
+
+# Note how much wider this grid is than config_search_example.yaml's --
+# that's the point: 4*5*4*4*2*3*2*5*3 = 288,000 MLP combinations alone
+# would be impossible to run exhaustively, but Optuna explores this space
+# efficiently by learning which regions are promising and pruning the rest
+# early.

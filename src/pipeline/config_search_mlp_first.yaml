@@ -1,0 +1,56 @@
+# First validation run on the server: MLP only, all three input
+# representations, a modest grid so it finishes quickly and confirms the
+# whole chain (feature_dir -> search -> report) works on your real data
+# before committing to a larger sweep. See docs/SEARCH.md.
+#
+# Usage:
+#   1. Build features once (see scripts/slurm_build_features.sh):
+#        python data/build_feature_dataset.py \
+#            --dat-file /path/to/your/DAT_100k --out-dir /path/to/features/run1 \
+#            --input-types stats grid circle
+#   2. Set search.feature_dir below to that --out-dir.
+#   3. cd src && python search/run_search.py --config pipeline/config_search_mlp_first.yaml
+#   4. python search/report.py --search-dir <search.path>/search_<search.id>
+#
+# Once this confirms everything works end to end, copy
+# pipeline/config_search_example.yaml (wider grid, + CNN) for the full search.
+
+search:
+  id: mlp_first_test
+  name: "ARCHES MLP first validation run"
+  description: "Confirms the feature_dir -> search -> report chain on real data before scaling up"
+  path: "/path/to/experiments"           # <-- set this
+
+  feature_dir: "/path/to/features/run1"  # <-- set this to build_feature_dataset.py's --out-dir
+  # dat_file / data_path are ignored when feature_dir is set
+
+  output: ["total_energy"]
+  scale: log1p
+
+  strategy: grid
+  seed_split: 1
+  split: {train: 0.70, validation: 0.15}
+
+  epochs: 60
+  early_stopping: {enabled: true, patience: 10}
+  batch_size: [64]
+  use_mlflow: false
+
+architectures:
+
+  mlp:
+    input_types: [stats, grid, circle]
+    layers: [1, 2, 3]
+    neurons: [32, 64, 128]
+    activation: [relu]
+    dropout: [0.0]
+    batchnorm: [false]
+    loss: [mse]
+    optimizer: [adam]
+    lr: [0.001]
+    scheduler: {enabled: true, type: plateau}
+    seeds: [1, 2]
+
+  # No `cnn:` block here on purpose -- this is the MLP-only first test.
+  # Add it back (see pipeline/config_search_example.yaml) once this run
+  # confirms stats/grid/circle all look right on your real data.
