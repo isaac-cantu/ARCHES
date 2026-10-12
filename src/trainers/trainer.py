@@ -93,9 +93,12 @@ class Trainer:
 
         pred_scaled = self.model(x).squeeze()
 
-        if self.loss_criterion == "pafl" and type == "val":
-            pafl_val = LossSelector(loss_type="mse").get_loss()
-            loss = pafl_val(
+        if type == "val":
+            # Validation loss is always MSE (scaled space), whatever the
+            # training loss is, so val_loss -- used for early stopping, best
+            # epoch and Optuna pruning -- is comparable across trials/losses.
+            val_criterion = LossSelector(loss_type="mse").get_loss()
+            loss = val_criterion(
                 pred_scaled,
                 y_scaled.squeeze()
             )
@@ -115,6 +118,8 @@ class Trainer:
         return loss, pred_real  
 
     def train(self, epochs, early_stopping=True, patience=10, scheduler=None, epoch_callback=None):
+
+        best_model = copy.deepcopy(self.model)
 
         for epoch in range(epochs):
 
@@ -435,4 +440,3 @@ class Trainer:
                 header=False,
                 index=False
             )
-        

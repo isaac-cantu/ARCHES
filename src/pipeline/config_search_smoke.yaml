@@ -1,0 +1,46 @@
+# Prueba rápida: Optuna + varias semillas por trial.
+# Correr desde src/:  python search/run_search.py --config pipeline/config_search_smoke.yaml
+# Revisar:            python search/report_trials.py --search-dir <path>/search_smoke_seeds
+# Costo: n_trials x len(seeds) entrenamientos = 6 x 3 = 18 como máximo.
+
+search:
+  id: smoke_seeds
+  name: "smoke test seeds"
+  description: "prueba rapida de validacion + multi-semilla"
+  path: "/home/icantu24/experiments"   # SALIDA (usa ruta absoluta, sin ~)
+
+  feature_dir: "/home/icantu24/corsika_data/features_099999"   # salida de build_feature_dataset.py
+
+  output: ["total_energy"]
+  scale: log1p
+
+  strategy: optuna
+  seed_split: 1
+  split: {train: 0.70, validation: 0.15}
+
+  epochs: 8
+  early_stopping: {enabled: true, patience: 3}
+  batch_size: [128]
+  use_mlflow: false
+
+  optuna:
+    n_trials: 6
+    objective_metric: resolution      # ahora = resolution de VALIDACION, media entre semillas
+    pruning:
+      enabled: true
+      n_warmup_steps: 3
+    sampler_seed: 0
+
+architectures:
+  mlp:
+    input_types: [stats]              # solo stats: la mas rapida
+    layers: [1, 2]
+    neurons: [32, 64]
+    activation: [relu, elu]
+    dropout: [0.0]
+    batchnorm: [false]
+    loss: [mse, mae, pafl]            # incluye mae para comprobar que ya no se poda de más
+    optimizer: [adam]
+    lr: [0.001, 0.0003]
+    scheduler: {enabled: false, type: null}
+    seeds: [1, 2]

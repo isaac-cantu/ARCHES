@@ -39,7 +39,7 @@ from data.split_data import split_data
 from pipeline.set_seed import set_seed
 from experiments.experiment_runner import ExperimentRunner
 from search.space import ARCH_COMPATIBLE_INPUT_TYPES, IMPLEMENTED_ARCHITECTURES, build_run_specs, shard
-from search.metric_direction import optuna_direction, transform_for_direction
+from search.metric_direction import METRIC_DIRECTION, optuna_direction, transform_for_direction
 
 
 def load_data(search_cfg: dict):
@@ -206,7 +206,14 @@ def run_one(spec, data_cache: DataCache, search_cfg: dict, use_mlflow: bool,
         row["status"] = "ok"
         row["train_time_sec"] = time.time() - t0
         row["n_params"] = sum(p.numel() for p in runner.model.parameters())
-        row["best_epoch"] = runner.train_model.get_history()["best_epoch"]["epoch"]
+        hist = runner.train_model.get_history()
+        row["best_epoch"] = hist["best_epoch"]["epoch"]
+        # Validation metrics (real units, e.g. GeV) at the kept epoch. These
+        # drive model selection; test metrics below are for reporting only.
+        be = row["best_epoch"] - 1
+        for k, vals in hist["val"].items():
+            if k != "loss" and len(vals) > be >= 0:
+                row[f"val_{k}"] = float(vals[be])
         for k, v in runner.train_model.test_metrics.items():
             row[k] = float(v.item()) if hasattr(v, "item") else float(v)
 
@@ -276,10 +283,23 @@ def run_optuna_search(full_cfg: dict, search_cfg: dict, data_cache: DataCache,
     rows = []
     # Offset run numbering by worker so concurrent workers sharing one
     # Optuna study never write to the same runs/run_<n>_.../ directory.
-    run_id_base = worker_id * 1_000_000
+    run_id_base = worker_id * 100_000_000
 
     def flush():
         pd.DataFrame(rows).to_csv(results_path, index=False)
+
+    # One row per TRIAL (= one hyperparameter combination), aggregated over
+    # all its seeds: mean/std of every val_* and test metric.
+    trials_rows = []
+    trials_path = results_path.parent / f"trials_worker{worker_id}.csv" if worker_id else results_path.parent / "trials.csv"
+
+    def flush_trials():
+        pd.DataFrame(trials_rows).to_csv(trials_path, index=False)
+
+    # Hyperparameter combos already evaluated (all seeds) -> objective value.
+    # TPE over small discrete spaces re-proposes identical combos; with N seeds
+    # per trial a repeat would cost N full trainings, so reuse the result.
+    evaluated = {}
 
     def objective(trial: "optuna.Trial"):
         architecture = trial.suggest_categorical("architecture", enabled_architectures)
@@ -297,19 +317,28 @@ def run_optuna_search(full_cfg: dict, search_cfg: dict, data_cache: DataCache,
         lr = trial.suggest_categorical(f"{architecture}_lr", [float(v) for v in as_list(arch_cfg.get("lr", [1e-3]))])
         batch_size = trial.suggest_categorical(f"{architecture}_batch_size",
                                                 [int(v) for v in as_list(arch_cfg.get("batch_size", global_batch_sizes))])
-        seed = trial.suggest_categorical(f"{architecture}_seed", [int(v) for v in as_list(arch_cfg.get("seeds", [1]))])
+        # Seeds are NOT hyperparameters: every trial trains the SAME configuration
+        # once per seed, and Optuna optimizes the mean over seeds (std is stored).
+        seeds = [int(v) for v in as_list(arch_cfg.get("seeds", [1]))]
         scheduler_cfg = arch_cfg.get("scheduler", {"enabled": False, "type": None})
 
-        spec = RunSpec(
-            run_id=run_id_base + trial.number, architecture=architecture, input_type=input_type,
-            layers=layers, neurons=neurons, activation=activation, dropout=dropout,
-            batchnorm=batchnorm, loss=loss, optimizer=optimizer_name, lr=lr,
-            scheduler_enabled=bool(scheduler_cfg.get("enabled", False)),
-            scheduler_type=scheduler_cfg.get("type"), batch_size=batch_size, seed=seed,
-        )
+        combo_key = tuple(sorted(trial.params.items()))
+        if combo_key in evaluated:
+            print(f"[search] [optuna trial {trial.number}] duplicate combination, reusing result")
+            trial.set_user_attr("duplicate_of_cached", True)
+            return evaluated[combo_key]
+
+        def make_spec(k, seed):
+            return RunSpec(
+                run_id=run_id_base + trial.number * 1000 + k, architecture=architecture,
+                input_type=input_type, layers=layers, neurons=neurons, activation=activation,
+                dropout=dropout, batchnorm=batchnorm, loss=loss, optimizer=optimizer_name, lr=lr,
+                scheduler_enabled=bool(scheduler_cfg.get("enabled", False)),
+                scheduler_type=scheduler_cfg.get("type"), batch_size=batch_size, seed=seed,
+            )
 
         print(f"[search] [optuna trial {trial.number}] {architecture}/{input_type} "
-              f"L{layers} N{neurons} {activation} loss={loss} seed={seed} bs={batch_size}")
+              f"L{layers} N{neurons} {activation} loss={loss} bs={batch_size} seeds={seeds}")
 
         def epoch_callback(epoch, val_loss):
             if not pruning_enabled:
@@ -318,22 +347,49 @@ def run_optuna_search(full_cfg: dict, search_cfg: dict, data_cache: DataCache,
             if trial.should_prune():
                 raise optuna.TrialPruned()
 
-        try:
-            row = run_one(spec, data_cache, search_cfg, use_mlflow, epoch_callback=epoch_callback)
-        except optuna.TrialPruned:
-            rows.append({**spec.as_dict(), "run_name": f"run_{spec.run_id:07d}_{architecture}_{input_type}",
-                         "status": "pruned"})
+        seed_rows = []
+        for k, seed in enumerate(seeds):
+            spec = make_spec(k, seed)
+            # Prune only on the first seed's learning curve (steps are epochs);
+            # the remaining seeds always complete so mean/std are well defined.
+            cb = epoch_callback if k == 0 else None
+            try:
+                row = run_one(spec, data_cache, search_cfg, use_mlflow, epoch_callback=cb)
+            except optuna.TrialPruned:
+                rows.append({**spec.as_dict(), "run_name": f"run_{spec.run_id:07d}_{architecture}_{input_type}",
+                             "status": "pruned", "trial": trial.number})
+                flush()
+                raise
+            row["trial"] = trial.number
+            rows.append(row)
             flush()
-            raise
-        rows.append(row)
-        flush()
+            if row["status"] != "ok":
+                # A real failure (not a deliberate prune) still shouldn't crash
+                # the whole study -- tell Optuna to skip it rather than feed it
+                # a fabricated objective value.
+                raise optuna.TrialPruned()
+            seed_rows.append(row)
 
-        if row["status"] != "ok":
-            # A real failure (not a deliberate prune) still shouldn't crash
-            # the whole study -- tell Optuna to skip it rather than feed it
-            # a fabricated objective value.
-            raise optuna.TrialPruned()
-        return transform_for_direction(objective_metric, row[objective_metric])
+        # ---- aggregate over seeds ----
+        agg = {**make_spec(0, seeds[0]).as_dict(), "trial": trial.number, "n_seeds": len(seeds),
+               "seeds": ",".join(map(str, seeds))}
+        agg.pop("run_id"), agg.pop("seed")
+        df_seeds = pd.DataFrame(seed_rows)
+        for col in df_seeds.columns:
+            if col in ("train_time_sec", "best_epoch", "n_params") or col.startswith("val_") or col in METRIC_DIRECTION:
+                vals = df_seeds[col].astype(float)
+                agg[f"{col}_mean"] = float(vals.mean())
+                agg[f"{col}_std"] = float(vals.std(ddof=1)) if len(vals) > 1 else 0.0
+        trials_rows.append(agg)
+        flush_trials()
+
+        # Select on VALIDATION (mean over seeds), never on test.
+        per_seed = [transform_for_direction(objective_metric, r[f"val_{objective_metric}"]) for r in seed_rows]
+        value = float(sum(per_seed) / len(per_seed))
+        trial.set_user_attr("val_std_over_seeds",
+                            float(pd.Series(per_seed).std(ddof=1)) if len(per_seed) > 1 else 0.0)
+        evaluated[combo_key] = value
+        return value
 
     pruner = optuna.pruners.MedianPruner(n_warmup_steps=n_warmup_steps) if pruning_enabled else optuna.pruners.NopPruner()
     sampler = optuna.samplers.TPESampler(seed=sampler_seed)
@@ -341,6 +397,10 @@ def run_optuna_search(full_cfg: dict, search_cfg: dict, data_cache: DataCache,
         direction=optuna_direction(objective_metric), sampler=sampler, pruner=pruner,
         storage=storage, study_name=study_name, load_if_exists=bool(storage),
     )
+
+    for t in study.trials:
+        if t.state.name == "COMPLETE" and t.value is not None:
+            evaluated[tuple(sorted(t.params.items()))] = t.value
 
     study.optimize(objective, n_trials=n_trials)
 

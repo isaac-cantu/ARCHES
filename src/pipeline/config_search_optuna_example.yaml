@@ -13,9 +13,9 @@ search:
   id: optuna_search_v1
   name: "ARCHES optuna search"
   description: "TPE + median pruning over the same space as config_search_example.yaml"
-  path: "/path/to/experiments"
+  path: "~/experiments"
 
-  feature_dir: "/path/to/features/run1"   # or dat_file / data_path, see config_search_example.yaml
+  feature_dir: "~/corsika_data/DAT000001"   # or dat_file / data_path, see config_search_example.yaml
 
   output: ["total_energy"]
   scale: log1p

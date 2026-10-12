@@ -8,6 +8,9 @@ METRIC_DIRECTION = {
     "r2": "max", "correlation": "max", "energy_scale": "closest_to_1",
 }
 
+# Validation counterparts (val_resolution, val_mse, ...) share the direction.
+METRIC_DIRECTION.update({f"val_{k}": v for k, v in list(METRIC_DIRECTION.items())})
+
 
 def optuna_direction(metric: str) -> str:
     """Map a metric's direction to Optuna's {"minimize", "maximize"}.
