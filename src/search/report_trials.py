@@ -2,8 +2,9 @@
 
     python search/report_trials.py --search-dir <search_dir> [--metric resolution] [--top 10]
 
-Ranks by mean VALIDATION metric over seeds and shows mean +/- std (validation
-and test). Test columns are for reporting only -- never select on them.
+Ranks by mean VALIDATION metric over seeds and shows mean +/- std. Test columns
+are hidden by default so they are not used to choose; add --show-test to see
+them (reporting only -- for the final number use search/confirm_best.py).
 """
 import argparse
 import glob
@@ -13,6 +14,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--search-dir", required=True)
 ap.add_argument("--metric", default="resolution")
 ap.add_argument("--top", type=int, default=10)
+ap.add_argument("--show-test", action="store_true", help="also print TEST columns (report only)")
 a = ap.parse_args()
 
 files = glob.glob(f"{a.search_dir}/trials*.csv")
@@ -23,6 +25,10 @@ asc = a.metric not in ("r2", "correlation")
 df = df.sort_values(f"val_{a.metric}_mean", ascending=asc)
 cols = ["trial", "input_type", "layers", "neurons", "activation", "loss", "optimizer", "lr",
         "batch_size", "n_seeds", f"val_{a.metric}_mean", f"val_{a.metric}_std",
-        f"{a.metric}_mean", f"{a.metric}_std", "val_r2_mean", "n_params_mean"]
+        "val_bias_mean", "val_rmse_mean", "val_r2_mean", "n_params_mean"]
+if a.show_test:
+    cols += [f"{a.metric}_mean", f"{a.metric}_std"]
 print(df[[c for c in cols if c in df.columns]].head(a.top).to_string(index=False))
-print("\nColumns *_mean/*_std without 'val_' are TEST (report only).")
+print("\nval_bias_mean: a model with small resolution but large |bias| is systematically off.")
+if a.show_test:
+    print("Columns *_mean/*_std without 'val_' are TEST (report only; never select on them).")

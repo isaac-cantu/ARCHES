@@ -213,3 +213,20 @@ def test_build_feature_dataset_resume_is_lossless(tmp_path, synthetic_dat, input
     assert X_full.shape == X_resumed.shape
     assert np.allclose(X_full, X_resumed)
     assert np.allclose(y_full, y_resumed)
+
+
+def test_build_refuses_to_append_to_a_different_source(tmp_path, synthetic_dat):
+    """Reusing an --out-dir with a different .DAT must fail, not silently mix
+    two datasets (which would also break train/test independence)."""
+    other = tmp_path / "DAT_OTHER"
+    _write_synthetic_dat(other, n_showers=60, seed=7)
+    out = tmp_path / "feat"
+    cmd = [sys.executable, str(SRC_DIR / "data" / "build_feature_dataset.py"),
+           "--out-dir", str(out), "--input-types", "stats", "--batch-size", "50"]
+    subprocess.run(cmd + ["--dat-file", str(synthetic_dat)], check=True, cwd=SRC_DIR,
+                   capture_output=True)
+    n = h5py.File(out / "stats.h5")["X"].shape[0]
+    res = subprocess.run(cmd + ["--dat-file", str(other)], cwd=SRC_DIR,
+                         capture_output=True, text=True)
+    assert res.returncode != 0 and "clean --out-dir" in res.stderr
+    assert h5py.File(out / "stats.h5")["X"].shape[0] == n      # untouched

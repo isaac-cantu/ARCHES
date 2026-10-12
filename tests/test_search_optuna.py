@@ -156,3 +156,105 @@ def test_optuna_shared_storage_parallel_workers(tmp_path):
     import optuna
     study = optuna.load_study(study_name="shared", storage=cfg["search"]["optuna"]["storage"])
     assert len(study.trials) == 4  # both workers' trials landed in the same study
+
+
+def _multiseed_cfg(search_dir, feature_dir, seeds, n_trials=3):
+    cfg = _base_config(search_dir, feature_dir, n_trials=n_trials, epochs=4)
+    cfg["search"]["optuna"]["pruning"] = {"enabled": False}
+    arch = cfg["architectures"]["mlp"]
+    arch.update({"input_types": ["stats"], "layers": [1], "neurons": [8, 16],
+                 "activation": ["relu"], "lr": [0.01], "seeds": seeds})
+    cfg["architectures"].pop("kan")
+    return cfg
+
+
+def test_multiseed_trials_aggregate_over_seeds(tmp_path):
+    """Every trial trains all seeds of the SAME config; trials.csv has mean/std
+    and the objective is the mean VALIDATION metric (not test)."""
+    feature_dir = _build_features(tmp_path)
+    search_dir = tmp_path / "experiments"
+    cfg = _multiseed_cfg(search_dir, feature_dir, seeds=[1, 2, 3])
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml.dump(cfg))
+    _run(cfg_path)
+
+    run_dir = search_dir / "search_optuna_test"
+    res = pd.read_csv(run_dir / "results.csv")
+    trials = pd.read_csv(run_dir / "trials.csv")
+
+    # one row per (trial, seed); all seeds of a trial share the hyperparameters
+    per_trial = res.groupby("trial")
+    assert (per_trial["seed"].nunique() == 3).all()
+    assert (per_trial[["layers", "neurons", "lr"]].nunique() == 1).all().all()
+
+    # aggregate columns exist and match the per-seed rows
+    for _, t in trials.iterrows():
+        rows = res[res["trial"] == t["trial"]]
+        assert t["n_seeds"] == 3
+        assert t["val_resolution_mean"] == pytest.approx(rows["val_resolution"].mean(), rel=1e-5)
+        assert t["val_resolution_std"] == pytest.approx(rows["val_resolution"].std(ddof=1), rel=1e-4)
+        assert "resolution_mean" in trials.columns  # test, report only
+
+    # study objective == mean validation resolution (selection never uses test)
+    assert (trials["val_resolution_mean"] > 0).all()
+
+
+def test_duplicate_combination_is_not_retrained(tmp_path):
+    """Search space with a single combination: after the first trial every
+    other trial must reuse the cached result (no extra training rows)."""
+    feature_dir = _build_features(tmp_path)
+    search_dir = tmp_path / "experiments"
+    cfg = _multiseed_cfg(search_dir, feature_dir, seeds=[1, 2], n_trials=4)
+    cfg["architectures"]["mlp"]["neurons"] = [8]
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml.dump(cfg))
+    result = _run(cfg_path)
+
+    res = pd.read_csv(search_dir / "search_optuna_test" / "results.csv")
+    assert len(res) == 2                      # 1 combination x 2 seeds, trained once
+    assert result.stdout.count("duplicate combination") == 3
+
+
+def test_report_trials_hides_test_by_default(tmp_path):
+    feature_dir = _build_features(tmp_path)
+    search_dir = tmp_path / "experiments"
+    cfg = _multiseed_cfg(search_dir, feature_dir, seeds=[1, 2])
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml.dump(cfg))
+    _run(cfg_path)
+    run_dir = search_dir / "search_optuna_test"
+
+    def report(*extra):
+        return subprocess.run(
+            [sys.executable, str(SRC_DIR / "search" / "report_trials.py"),
+             "--search-dir", str(run_dir), *extra],
+            check=True, cwd=SRC_DIR, capture_output=True, text=True).stdout
+
+    default = report()
+    assert "val_resolution_mean" in default and "val_bias_mean" in default
+    header = default.splitlines()[0]
+    assert " resolution_mean" not in header           # test column hidden
+    assert " resolution_mean" in report("--show-test").splitlines()[0]
+
+
+def test_confirm_best_runs_over_split_seeds(tmp_path):
+    feature_dir = _build_features(tmp_path)
+    search_dir = tmp_path / "experiments"
+    cfg = _multiseed_cfg(search_dir, feature_dir, seeds=[1, 2], n_trials=2)
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml.dump(cfg))
+    _run(cfg_path)
+    run_dir = search_dir / "search_optuna_test"
+
+    subprocess.run(
+        [sys.executable, str(SRC_DIR / "search" / "confirm_best.py"),
+         "--search-dir", str(run_dir), "--split-seeds", "1", "2", "--seeds", "1", "2"],
+        check=True, cwd=SRC_DIR)
+
+    conf = pd.read_csv(run_dir / "confirm" / "confirm.csv")
+    assert len(conf) == 4 and (conf["status"] == "ok").all()
+    assert set(conf["split_seed"]) == {1, 2}
+    assert conf["trial"].nunique() == 1
+    summ = pd.read_csv(run_dir / "confirm" / "confirm_summary.csv")
+    assert {"resolution", "rmse", "bias"}.issubset(set(summ["metric"]))
+    assert (summ["n_trainings"] == 4).all()

@@ -120,19 +120,45 @@ def build_one(input_type: str, dat_file: str, out_path: Path, batch_size: int,
         "circle": lambda dfp, dfs: circle_generator(df_particles=dfp, df_shower=dfs, device=device),
     }[input_type]
 
+    import os
+    src_id = {"dat_file": os.path.abspath(dat_file), "dat_size": os.path.getsize(dat_file),
+              "input_type": input_type, "grid_n": grid_n if input_type == "grid" else -1}
+
     with h5py.File(out_path, "a") as h5file:
+        # Refuse to append to a file built from a DIFFERENT source/config: mixing
+        # two datasets (or duplicating showers) silently breaks train/test independence.
+        if "X" in h5file:
+            for k, v in src_id.items():
+                old = h5file.attrs.get(k)
+                if old is not None and old != v:
+                    raise ValueError(
+                        f"{out_path} was built with {k}={old!r}, now {k}={v!r}. "
+                        f"Use a clean --out-dir (or delete the file) instead of appending.")
+            if h5file["X"].shape[0] != h5file["y"].shape[0]:
+                raise ValueError(f"{out_path}: X/y length mismatch (interrupted write) -- delete and rebuild")
+        for k, v in src_id.items():
+            h5file.attrs[k] = v
         n_done = h5file["X"].shape[0] if "X" in h5file else 0
+        # Showers already consumed from the .DAT (a shower with no particles
+        # yields no row, so this can exceed n_done). Legacy files: fall back to rows.
+        consumed_start = int(h5file.attrs.get("n_consumed", n_done))
+        if "n_rows" in h5file.attrs and int(h5file.attrs["n_rows"]) != n_done:
+            raise ValueError(f"{out_path}: row count {n_done} != checkpoint {int(h5file.attrs['n_rows'])} "
+                             f"(write interrupted mid-batch) -- delete the file and rebuild")
+        consumed = 0
         t0 = time.time()
         n_skipped = 0
         n_new = 0
         for i, (df_particles, df_shower) in enumerate(
             corsario.iter_shower_batches(dat_file, batch_size=batch_size, strict=strict)
         ):
-            if n_skipped + len(df_shower) <= n_done:
+            if consumed + len(df_shower) <= consumed_start:
                 # Already checkpointed in an earlier (interrupted) run --
                 # skip the (cheap, no feature computation) re-parsed batch.
+                consumed += len(df_shower)
                 n_skipped += len(df_shower)
                 continue
+            consumed += len(df_shower)
 
             X_batch, y_batch = generator(df_particles, df_shower)
             X_batch = X_batch.detach().cpu().numpy().astype("f4")
@@ -141,6 +167,8 @@ def build_one(input_type: str, dat_file: str, out_path: Path, batch_size: int,
             X_ds, y_ds = _get_or_create_h5(h5file, X_batch.shape[1])
             _append(X_ds, X_batch)
             _append(y_ds, y_batch)
+            h5file.attrs["n_consumed"] = consumed
+            h5file.attrs["n_rows"] = X_ds.shape[0]
             n_new += X_batch.shape[0]
 
             if i % progress_every == 0:

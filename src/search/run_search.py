@@ -76,6 +76,19 @@ def load_prebuilt_features(feature_dir: str, input_type: str, architecture: str)
         X = torch.from_numpy(f["X"][:]).float()
         y = torch.from_numpy(f["y"][:]).float()
 
+    if X.shape[0] != y.shape[0]:
+        raise ValueError(f"{path}: X has {X.shape[0]} rows but y has {y.shape[0]} "
+                         f"(interrupted build? rebuild with a clean --out-dir)")
+    # Sanity: the target must be a positive finite energy (log1p scaling) and
+    # features finite. Drop offending showers (label-free except y>0) and say so.
+    ok = torch.isfinite(X).all(dim=1) & torch.isfinite(y) & (y > 0)
+    if not bool(ok.all()):
+        print(f"[search] WARNING: dropping {int((~ok).sum())} of {len(ok)} showers with "
+              f"non-finite features or non-positive/non-finite energy in {path}")
+        X, y = X[ok], y[ok]
+    if float(y.std()) == 0.0:
+        print(f"[search] WARNING: target is constant in {path} -- R2/resolution are meaningless")
+
     if architecture == "cnn":
         if input_type != "grid":
             raise ValueError("architecture=cnn requires input_type=grid")
@@ -185,7 +198,10 @@ def run_one(spec, data_cache: DataCache, search_cfg: dict, use_mlflow: bool,
     X_shape = tuple(train_ds.tensors[0].shape)
 
     set_seed(spec.seed)
-    train_loader = DataLoader(train_ds, batch_size=spec.batch_size, shuffle=True)
+    # A last batch of exactly 1 sample breaks BatchNorm in train mode; drop it
+    # only in that case (otherwise keep every training sample).
+    drop_last = len(train_ds) % spec.batch_size == 1
+    train_loader = DataLoader(train_ds, batch_size=spec.batch_size, shuffle=True, drop_last=drop_last)
     val_loader = DataLoader(val_ds, batch_size=spec.batch_size)
     test_loader = DataLoader(test_ds, batch_size=spec.batch_size)
 
@@ -386,13 +402,20 @@ def run_optuna_search(full_cfg: dict, search_cfg: dict, data_cache: DataCache,
         # Select on VALIDATION (mean over seeds), never on test.
         per_seed = [transform_for_direction(objective_metric, r[f"val_{objective_metric}"]) for r in seed_rows]
         value = float(sum(per_seed) / len(per_seed))
+        if not np.isfinite(value):
+            print(f"[search] [optuna trial {trial.number}] non-finite objective ({value}); "
+                  f"treating as failed/pruned")
+            raise optuna.TrialPruned()
         trial.set_user_attr("val_std_over_seeds",
                             float(pd.Series(per_seed).std(ddof=1)) if len(per_seed) > 1 else 0.0)
         evaluated[combo_key] = value
         return value
 
     pruner = optuna.pruners.MedianPruner(n_warmup_steps=n_warmup_steps) if pruning_enabled else optuna.pruners.NopPruner()
-    sampler = optuna.samplers.TPESampler(seed=sampler_seed)
+    # Different seed per worker: with a shared study and the same seed every
+    # worker would propose the same startup trials (all duplicates -> wasted).
+    sampler = optuna.samplers.TPESampler(
+        seed=None if sampler_seed is None else sampler_seed + worker_id)
     study = optuna.create_study(
         direction=optuna_direction(objective_metric), sampler=sampler, pruner=pruner,
         storage=storage, study_name=study_name, load_if_exists=bool(storage),
@@ -410,6 +433,10 @@ def run_optuna_search(full_cfg: dict, search_cfg: dict, data_cache: DataCache,
           f"({n_ok} completed, {n_pruned} pruned)")
     if study.best_trial is not None:
         print(f"[search] best so far: value={study.best_value:.4g} params={study.best_params}")
+    n_failed = sum(1 for r in rows if r.get("status") == "failed")
+    if n_failed:
+        print(f"[search] WARNING: {n_failed} training run(s) FAILED (not pruned) -- see "
+              f"'error' column in {results_path} and runs/*/error.txt")
     print(f"[search] wrote {len(rows)} row(s) -> {results_path}")
 
 

@@ -43,4 +43,4 @@ architectures:
     optimizer: [adam]
     lr: [0.001, 0.0003]
     scheduler: {enabled: false, type: null}
-    seeds: [1, 2]
+    seeds: [1, 2, 3]

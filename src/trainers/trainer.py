@@ -91,7 +91,7 @@ class Trainer:
 
         y_scaled = self.output_transform.transform(y)
 
-        pred_scaled = self.model(x).squeeze()
+        pred_scaled = self.model(x).view(-1)
 
         if type == "val":
             # Validation loss is always MSE (scaled space), whatever the
@@ -100,14 +100,14 @@ class Trainer:
             val_criterion = LossSelector(loss_type="mse").get_loss()
             loss = val_criterion(
                 pred_scaled,
-                y_scaled.squeeze()
+                y_scaled.view(-1)
             )
             #print("1")
 
         else:
             loss = self.criterion(
                 pred_scaled,
-                y_scaled.squeeze()
+                y_scaled.view(-1)
             )
 
         pred_real = (
@@ -144,13 +144,13 @@ class Trainer:
                 train_loss += loss.item()
 
                 train_preds.append(pred_real.detach().cpu())
-                train_targets.append(y.detach().cpu())
+                train_targets.append(y.detach().cpu().view(-1))
 
             train_loss /= len(self.train_loader)
             self.history["train"]["loss"].append(train_loss)
 
-            train_preds = torch.cat(train_preds).squeeze()
-            train_targets = torch.cat(train_targets).squeeze()
+            train_preds = torch.cat(train_preds).view(-1)
+            train_targets = torch.cat(train_targets).view(-1)
             
             self.update_metrics(set_type="train", metrics_data=evaluate_training(train_preds, train_targets))
 
@@ -172,13 +172,13 @@ class Trainer:
                     val_loss += loss.item()
 
                     val_preds.append(pred_real.detach().cpu())
-                    val_targets.append(y.detach().cpu())
+                    val_targets.append(y.detach().cpu().view(-1))
 
             val_loss /= len(self.val_loader)
             self.history["val"]["loss"].append(val_loss)
 
-            val_preds = torch.cat(val_preds).squeeze()
-            val_targets = torch.cat(val_targets).squeeze()
+            val_preds = torch.cat(val_preds).view(-1)
+            val_targets = torch.cat(val_targets).view(-1)
 
             self.update_metrics(set_type="val", metrics_data=evaluate_training(val_preds, val_targets))
 
@@ -284,15 +284,15 @@ class Trainer:
                 x = x.to(self.device)
                 y = y.to(self.device)
 
-                pred = self.model(x)
+                pred = self.model(x).view(-1)
 
                 pred = self.output_transform.inverse_transform(pred)
 
                 preds.append(pred.detach().cpu())
-                targets.append(y.detach().cpu())
+                targets.append(y.detach().cpu().view(-1))
 
-        preds = torch.cat(preds).squeeze()
-        targets = torch.cat(targets).squeeze()
+        preds = torch.cat(preds).view(-1)
+        targets = torch.cat(targets).view(-1)
 
         self.test_metrics = evaluate_model(
             preds,
